@@ -13,6 +13,7 @@ typedef struct WorkItem{
 typedef struct WorkQueue{
     WorkItem *head;
     WorkItem *tail;
+    int active_worker;
     int is_finished;
     pthread_mutex_t mutex;
     pthread_cond_t cond;
@@ -28,6 +29,7 @@ void init_work_queue(WorkQueue *q){
 
     // set the queue's finished condition to not finished
     q->is_finished=0;
+    q->active_worker=0;
 
     // init the pthreads
     pthread_mutex_init(&q->mutex,NULL);
@@ -91,8 +93,9 @@ char *dequeue_work_queue(WorkQueue *q){
         pthread_cond_wait(&q->cond, &q->mutex);
     }
 
-    if (q->head==NULL && q->is_finished==1)
+    if (q->head==NULL)
     {
+        pthread_mutex_unlock(&q->mutex);
        return NULL;
     }
     
@@ -101,9 +104,23 @@ char *dequeue_work_queue(WorkQueue *q){
     q->head = q->head->next;
     if (q->head == NULL) q->tail = NULL;
 
+    q->active_worker++;
+
     pthread_mutex_unlock(&q->mutex);
 
     char *return_path = item->path;
     free(item);
     return return_path;
+}
+
+void work_done(WorkQueue *q) {
+    pthread_mutex_lock(&q->mutex);
+    q->active_worker--;
+
+    // If queue is empty and no active workers, signal main thread
+    if (q->head == NULL && q->active_worker == 0) {
+        pthread_cond_broadcast(&q->cond); 
+    }
+
+    pthread_mutex_unlock(&q->mutex);
 }

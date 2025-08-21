@@ -4,7 +4,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <limits.h>
-#include "include/workqueue.h"
+#include "../include/workqueue.h"
 
 typedef struct WorkerArgs{
     WorkQueue *queue;
@@ -77,6 +77,8 @@ void *worker_function(void *args){
         process_dir(path,search_term,q);
 
         free(path);
+
+        work_done(q);
         
     }
 

@@ -1,18 +1,20 @@
 #ifndef WORKER_H
 #define WORKER_H
 
-#include "workqueue.h"   // Include the work queue definitions
+#include "workqueue.h"
 
-// Structure to pass arguments to worker threads
+// Arguments passed to each worker thread
 typedef struct WorkerArgs {
-    WorkQueue *queue;        // Pointer to the work queue
-    const char *search_term; // Term to search for in file names
+    WorkQueue *queue;
+    const char *search_term;
 } WorkerArgs;
 
-// Function to process a directory: enqueue subdirectories and print matching files
+// Recursively process a directory, enqueueing subdirectories
+// and printing files that match the search term
 void process_dir(const char *path, const char *search_term, WorkQueue *q);
 
-// Worker thread function: dequeues directories and processes them
+// Worker thread function
+// Continuously dequeues directories from the work queue and processes them
 void *worker_function(void *args);
 
 #endif // WORKER_H
