@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <linux/stat.h>
+#include <linux/limits.h>
 
 typedef enum{
     OP_OPEN,
@@ -17,4 +18,5 @@ typedef struct Request{
     int dir_fd;
     struct linux_dirent64 *dirents;
     struct statx statx_buf;
-}
+}Request;
+
