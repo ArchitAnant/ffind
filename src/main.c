@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <liburing.h>
 #include <string.h>
+#include <dirent.h>
 
 #include "../headers/request.h"
 #include <linux/fcntl.h>
@@ -18,6 +19,42 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     io_uring_sqe_set_data(sqe,req);
 }
 
+void handle_completion(struct io_uring_cqe *cqe,Request *req,
+const char *search_term, struct io_uring *ring, int *inflight_ops){
+
+    if (cqe->res <0)
+    {
+        return;
+    }
+
+    switch (req->type)
+    {
+    case OP_OPEN:{
+        int dir_fd = cqe->res;
+        submit_getdents_requests(dir_fd,ring,inflight_ops);
+        break;
+    }
+    case OP_READ_DIRENTS:{
+        if (cqe->res >0)
+        {
+            struct linux_dirent64 *d;
+            long bpos = 0;
+            while (bpos < cqe->res)
+            {
+                //d = (struct linux_dirent64 *)(req->dirents + bpos);
+            }
+            
+        }
+        
+        break;
+    }
+
+    
+    default:
+        break;
+    }
+    
+}
 
 int main(int argc,char *argv[]){
     if (argc!=3)
