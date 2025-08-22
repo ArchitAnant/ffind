@@ -3,13 +3,17 @@
 #include <liburing.h>
 #include <string.h>
 #include <linux/types.h>
-#include <linux/dirent.h>
+#include <dirent.h>
+#include <sys/types.h>
+//#include <linux/dirent.h>
 #include <limits.h>   // PATH_MAX
-#include <unistd.h>   // close()
 #include <fcntl.h>
+#include <linux/fs.h>
 #include "../headers/request.h"
+#include <unistd.h>
 
 #define DIRENT_BUF_SIZE  32768
+
 
 
 void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops){
@@ -33,6 +37,7 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
 }
 
 void submit_getdents_request(int dir_fd, const char* dir_path, struct io_uring *ring, int *inflight_ops){
+    printf("[SUBMIT] %s\n",dir_path);
     Request *req = calloc(1, sizeof(Request));
 
     req->type = OP_READ_DIRENTS;
@@ -51,8 +56,8 @@ void submit_getdents_request(int dir_fd, const char* dir_path, struct io_uring *
         free(req);
         return;
     }
-
-    io_uring_prep_getdents64(sqe,dir_fd,req->dirents,DIRENT_BUF_SIZE);
+    
+    io_uring_prep_read(sqe,dir_fd,req->dirents,DIRENT_BUF_SIZE,-1);
     io_uring_sqe_set_data(sqe,req);
 
     (*inflight_ops)++;
@@ -76,6 +81,7 @@ void handle_completion(struct io_uring_cqe *cqe,
     {
     case OP_OPEN:{
         int dir_fd = cqe->res;
+        
         submit_getdents_request(dir_fd,req->path,ring,inflight_ops);
         break;
     }
@@ -92,11 +98,12 @@ void handle_completion(struct io_uring_cqe *cqe,
                         snprintf(full_path, sizeof(full_path), "%s/%s", req->path, d->d_name);
 
                         if (d->d_type == DT_DIR) {
+                            printf("\n[GAD]\n");
                             submit_open_request(full_path, ring, inflight_ops);
                         } else if (d->d_type == DT_REG) { // FIXED: Typo d_type
                             if (strstr(d->d_name, search_term) != NULL) {
                                 // FIXED: Print the correctly constructed full_path
-                                printf("%s\n", full_path);
+                                printf("[Found] : %s\n", full_path);
                             }
                         }
                         // We are ignoring DT_UNKNOWN for now for simplicity.
