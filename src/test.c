@@ -3,7 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <liburing.h>
-#include <linux/dirent.h>   // for linux_dirent64
+#include <dirent.h>   // for linux_dirent64
 
 #define BUF_SIZE 4096
 
