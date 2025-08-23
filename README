@@ -1,6 +1,5 @@
 
 
-
 ffind
 -----
 
@@ -61,11 +60,11 @@ When a directory read returns 0 bytes, the directory scan is complete. The file 
 
 Targeting Efficiency :
 
-Reduced System Call Overhead : The most expensive part of traditional I/O is the context switch between user space and kernel space for each system call. With io_uring, ffind can submit a large batch of I/O requests with a single syscall, and reap many completions with another. This drastically reduces the number of context switches.
+- Reduced System Call Overhead : The most expensive part of traditional I/O is the context switch between user space and kernel space for each system call. With io_uring, ffind can submit a large batch of I/O requests with a single syscall, and reap many completions with another. This drastically reduces the number of context switches.
 
-True Asynchronicity : ffind can have hundreds or thousands of filesystem operations "in-flight" simultaneously. While the kernel is working on opening one directory or reading another, the application's CPU is free to process the results of already-completed operations. This keeps the CPU and the storage device constantly busy, maximizing parallelism.
+- True Asynchronicity : ffind can have hundreds or thousands of filesystem operations "in-flight" simultaneously. While the kernel is working on opening one directory or reading another, the application's CPU is free to process the results of already-completed operations. This keeps the CPU and the storage device constantly busy, maximizing parallelism.
 
-Kernel-Side Polling (Optional) : For ultimate low-latency, io_uring can be configured to use kernel-side polling (IORING_SETUP_SQPOLL), which can eliminate system calls from the submission path almost entirely under heavy load.
+- Kernel-Side Polling (Optional) : For ultimate low-latency, io_uring can be configured to use kernel-side polling (IORING_SETUP_SQPOLL), which can eliminate system calls from the submission path almost entirely under heavy load.
 
 
 License
