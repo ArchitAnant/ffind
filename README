@@ -1,3 +1,5 @@
+
+
 ffind: An Asynchronous File Finder for Linux
 --------------------------------------------
 
@@ -6,7 +8,10 @@ ffind is a high-performance, command-line utility for recursively finding files 
 ffind is designed to do one thing exceptionally well: find files that contain a specific substring in their name, as fast as possible. 
 
 
-For Usage check : [USAGE.md](https://github.com/ArchitAnant/ffind/blob/main/USAGE.md)
+Usage
+_____
+
+CHECK :: USAGE.md
 
 
 Working
@@ -40,3 +45,12 @@ Reduced System Call Overhead : The most expensive part of traditional I/O is the
 True Asynchronicity : ffind can have hundreds or thousands of filesystem operations "in-flight" simultaneously. While the kernel is working on opening one directory or reading another, the application's CPU is free to process the results of already-completed operations. This keeps the CPU and the storage device constantly busy, maximizing parallelism.
 
 Kernel-Side Polling (Optional) : For ultimate low-latency, io_uring can be configured to use kernel-side polling (IORING_SETUP_SQPOLL), which can eliminate system calls from the submission path almost entirely under heavy load.
+
+
+License
+-------
+
+All software contained within this repo is dual licensed LGPL and MIT. 
+
+
+Archit Anant 2025-09-23
