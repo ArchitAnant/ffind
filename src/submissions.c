@@ -9,38 +9,45 @@
 
 
 
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops){
-    Request *req = calloc(1, sizeof(Request));
-    
-    req->type = OP_OPEN;
-    strncpy(req->path, path, sizeof(req->path)-1);
-    req->path[sizeof(req->path)-1] = '\0';
-    
+
+void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
+    Request *req = malloc(sizeof(Request));
+    if (!req) {
+        perror("malloc request");
+        return;
+    }
+    strncpy(req->path, path, sizeof(req->path) - 1);
+    req->path[sizeof(req->path) - 1] = '\0';
+
     struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
     if (!sqe) {
-        perror("io_uring_get_sqe");
-        if (req->type == OP_READ_DIRENTS && req->dirents) free(req->dirents);
+        // This is a rare condition, means the submission queue is full.
+        // A more robust app might handle this by waiting. We'll just drop the task.
+        fprintf(stderr, "Warning: Could not get SQE, dropping task for %s\n", path);
         free(req);
         return;
     }
-    io_uring_prep_openat(sqe, AT_FDCWD, path,O_RDONLY | O_DIRECTORY , 0);
-    io_uring_sqe_set_data(sqe,req);
     
+    io_uring_prep_openat(sqe, AT_FDCWD, path, O_RDONLY | O_DIRECTORY, 0);
+    io_uring_sqe_set_data(sqe, req);
+
     (*inflight_ops)++;
 }
 
 
-void handle_completion(struct io_uring_cqe *cqe) {
+void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct io_uring *ring, int *inflight_ops) {
     Request *req = (Request *)io_uring_cqe_get_data(cqe);
-    
+
+    // Check if the openat operation failed (e.g., permission denied).
     if (cqe->res < 0) {
-        fprintf(stderr, "Failed to open directory %s: %s\n", req->path, strerror(-cqe->res));
+        // fprintf(stderr, "Warning: Failed to open directory '%s': %s\n", req->path, strerror(-cqe->res));
         free(req);
         return;
     }
-    
+
     int dir_fd = cqe->res;
-    
+
+    // Convert the file descriptor to a DIR stream for use with readdir.
     DIR *dir_stream = fdopendir(dir_fd);
     if (!dir_stream) {
         perror("fdopendir");
@@ -48,17 +55,32 @@ void handle_completion(struct io_uring_cqe *cqe) {
         free(req);
         return;
     }
-    
-    printf("Contents of %s:\n", req->path);
+
     struct dirent *entry;
-    // readdir will block, but it's the correct way to read directory entries.
+    // Loop through directory entries synchronously. This is CPU-bound work.
     while ((entry = readdir(dir_stream)) != NULL) {
-        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            printf("- %s\n", entry->d_name);
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
         }
+
+        char full_path[PATH_MAX];
+        snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
+
+        // Check the type of the directory entry.
+        // Using d_type is much faster than calling stat() for every entry.
+        if (entry->d_type == DT_DIR) {
+            // RECURSIVE STEP: If it's a directory, submit a new async 'openat' request.
+            submit_open_request(full_path, ring, inflight_ops);
+        } else if (entry->d_type == DT_REG) {
+            // It's a regular file. Check if its name matches the search term.
+            if (strstr(entry->d_name, search_term) != NULL) {
+                printf("%s\n", full_path);
+            }
+        }
+        // Note: We are ignoring DT_UNKNOWN, symlinks, etc. for simplicity.
     }
-    
-    // Clean up the synchronous resources.
+
+    // Clean up resources for the directory we just finished scanning.
     closedir(dir_stream); // This also closes the underlying dir_fd.
     free(req);
 }
