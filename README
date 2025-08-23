@@ -1,11 +1,15 @@
 
 
-ffind: An Asynchronous File Finder for Linux
---------------------------------------------
+
+ffind
+-----
+
+An Asynchronous File Finder for Linux
 
 ffind is a high-performance, command-line utility for recursively finding files on a Linux filesystem. It is built from the ground up using io_uring, the modern asynchronous I/O interface in the Linux kernel, to achieve maximum throughput and efficiency.
 
 ffind is designed to do one thing exceptionally well: find files that contain a specific substring in their name, as fast as possible. 
+
 
 
 Usage
@@ -14,22 +18,31 @@ _____
 CHECK :: USAGE.md
 
 
+
 Working
 _______
 
 The Asynchronous io_uring Engine :
+
 ffind achieves its performance by fundamentally changing the conversation with the Linux kernel. Instead of the traditional "ask and wait" (blocking) model, ffind uses an event-driven, asynchronous architecture.
 
+
 The Core Components :
+
 io_uring : The foundation of the application. ffind initializes an io_uring instance, creating two ring buffers in memory that are shared directly with the kernel: the Submission Queue (SQ) and the Completion Queue (CQ). This shared memory allows for extremely low-overhead communication.
 
-The Event Loop : The application is built around a single-threaded event loop in main(). This loop's only job is to manage the flow of I/O operations:
+
+The Event Loop : 
+
+The application is built around a single-threaded event loop in main(). This loop's only job is to manage the flow of I/O operations:
 - Submit pending requests from the SQ to the kernel.
 - Wait for completion events (CQEs) to appear on the CQ.
 - Dispatch completed events to a handler function.
 - Repeat.
 
-The State Machine (handle_completion) : The heart of the logic resides in the handle_completion function. Since operations are asynchronous and can complete in any order, a state machine is used to track the progress of each directory scan. 
+The State Machine (handle_completion) : 
+
+The heart of the logic resides in the handle_completion function. Since operations are asynchronous and can complete in any order, a state machine is used to track the progress of each directory scan. 
 
 A single Request struct holds the state for scanning one directory, transitioning through different phases:
 
@@ -54,3 +67,4 @@ All software contained within this repo is dual licensed LGPL and MIT.
 
 
 Archit Anant 2025-09-23
+
