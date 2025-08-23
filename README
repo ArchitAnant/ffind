@@ -1,55 +1,27 @@
-# ffind: An Asynchronous File Finder for Linux
-**ffind** is a high-performance, command-line utility for recursively finding files on a Linux filesystem. It is built from the ground up using `io_uring`, the modern asynchronous I/O interface in the Linux kernel, to achieve maximum throughput and efficiency.
+ffind: An Asynchronous File Finder for Linux
+--------------------------------------------
+
+ffind is a high-performance, command-line utility for recursively finding files on a Linux filesystem. It is built from the ground up using io_uring, the modern asynchronous I/O interface in the Linux kernel, to achieve maximum throughput and efficiency.
 
 ffind is designed to do one thing exceptionally well: find files that contain a specific substring in their name, as fast as possible. 
 
-## Usage
-**Prerequisites**
-ffind requires a modern Linux kernel (5.10+ recommended) and the liburing development library.
 
-### On Debian/Ubuntu
-```shell 
-sudo apt-get install build-essential liburing-dev
-# you can search for equivalent packages for Arch/Fedora.
-```
-### Compile the application
-```shell
-make
-```
+Working
+_______
 
-### Clean up build files
-```bash
-make clean
-```
-### Examples
-```shell
-./ffind <path> <search_term>
-
-# Search for all files containing "config" in your home directory
-./ffind ~ config
-
-# Search for all header files containing "net" in /usr/include
-./ffind /usr/include net
-
-# Find all Markdown files in the current directory
-./ffind . .md
-```
-
-## Working
-
-**The Asynchronous `io_uring` Engine**
+The Asynchronous `io_uring` Engine :
 ffind achieves its performance by fundamentally changing the conversation with the Linux kernel. Instead of the traditional "ask and wait" (blocking) model, ffind uses an event-driven, asynchronous architecture.
 
-**The Core Components**
+The Core Components :
 `io_uring`: The foundation of the application. ffind initializes an io_uring instance, creating two ring buffers in memory that are shared directly with the kernel: the Submission Queue (SQ) and the Completion Queue (CQ). This shared memory allows for extremely low-overhead communication.
 
-`The Event Loop`: The application is built around a single-threaded event loop in main(). This loop's only job is to manage the flow of I/O operations:
+The Event Loop : The application is built around a single-threaded event loop in main(). This loop's only job is to manage the flow of I/O operations:
 - Submit pending requests from the SQ to the kernel.
 - Wait for completion events (CQEs) to appear on the CQ.
 - Dispatch completed events to a handler function.
 - Repeat.
 
-`The State Machine (handle_completion)`: The heart of the logic resides in the handle_completion function. Since operations are asynchronous and can complete in any order, a state machine is used to track the progress of each directory scan. 
+The State Machine (handle_completion) : The heart of the logic resides in the handle_completion function. Since operations are asynchronous and can complete in any order, a state machine is used to track the progress of each directory scan. 
 
 A single Request struct holds the state for scanning one directory, transitioning through different phases:
 
@@ -58,10 +30,10 @@ A single Request struct holds the state for scanning one directory, transitionin
 - Process and Recurse: When the read completes, the buffer of directory entries is processed. For each subdirectory found, a new openat request is submitted, creating a new task. For each file, the name is checked against the search term.
 - Terminal State: When a directory read returns 0 bytes, the directory scan is complete. The file descriptor is closed, and all associated memory is freed.
 
-**Targeting Efficiency:**
+Targeting Efficiency :
 
-`Reduced System Call Overhead`: The most expensive part of traditional I/O is the context switch between user space and kernel space for each system call. With io_uring, ffind can submit a large batch of I/O requests with a single syscall, and reap many completions with another. This drastically reduces the number of context switches.
+Reduced System Call Overhead : The most expensive part of traditional I/O is the context switch between user space and kernel space for each system call. With io_uring, ffind can submit a large batch of I/O requests with a single syscall, and reap many completions with another. This drastically reduces the number of context switches.
 
-`True Asynchronicity`: ffind can have hundreds or thousands of filesystem operations "in-flight" simultaneously. While the kernel is working on opening one directory or reading another, the application's CPU is free to process the results of already-completed operations. This keeps the CPU and the storage device constantly busy, maximizing parallelism.
+True Asynchronicity : ffind can have hundreds or thousands of filesystem operations "in-flight" simultaneously. While the kernel is working on opening one directory or reading another, the application's CPU is free to process the results of already-completed operations. This keeps the CPU and the storage device constantly busy, maximizing parallelism.
 
-`Kernel-Side Polling (Optional)`: For ultimate low-latency, io_uring can be configured to use kernel-side polling (IORING_SETUP_SQPOLL), which can eliminate system calls from the submission path almost entirely under heavy load.
+Kernel-Side Polling (Optional) : For ultimate low-latency, io_uring can be configured to use kernel-side polling (IORING_SETUP_SQPOLL), which can eliminate system calls from the submission path almost entirely under heavy load.
