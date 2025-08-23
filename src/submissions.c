@@ -74,7 +74,7 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         } else if (entry->d_type == DT_REG) {
             // It's a regular file. Check if its name matches the search term.
             if (strstr(entry->d_name, search_term) != NULL) {
-                printf("%s\n", full_path);
+                printf("[FOUND] %s\n", full_path);
             }
         }
         // Note: We are ignoring DT_UNKNOWN, symlinks, etc. for simplicity.
