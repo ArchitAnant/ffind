@@ -3,3 +3,4 @@ testdir
 ffind.*
 .vscode/
 temp.md
+.DS_Store

@@ -85,37 +85,37 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
     free(req);
 }
 
-// void _prep_getdents64(struct io_uring_sqe *sqe,int fd, void *dirents_buf, unsigned len){
-//     memset(sqe,0,sizeof(*sqe));
-//     sqe->opcode = IORING_OP_GETDENTS;
-//     sqe->fd = fd;
-//     sqe->addr = (uint64_t)dirents_buf;
-//     sqe->len = len;
-// }
+void _prep_getdents64(struct io_uring_sqe *sqe,int fd, void *dirents_buf, unsigned len){
+    memset(sqe,0,sizeof(*sqe));
+    sqe->opcode = IORING_OP_GETDENTS64;
+    sqe->fd = fd;
+    sqe->addr = (uint64_t)dirents_buf;
+    sqe->len = len;
+}
 
-// void submit_getdents_request(int dir_fd, const char* dir_path, struct io_uring *ring, int *inflight_ops){
-//     printf("[SUBMIT] %s\n",dir_path);
-//     Request *req = calloc(1, sizeof(Request));
+void submit_getdents_request(int dir_fd, const char* dir_path, struct io_uring *ring, int *inflight_ops){
+    printf("[SUBMIT] %s\n",dir_path);
+    Request *req = calloc(1, sizeof(Request));
 
-//     req->type = OP_READ_DIRENTS;
-//     req->dir_fd = dir_fd;
-//     strncpy(req->path, dir_path, sizeof(req->path) - 1);
+    req->type = OP_READ_DIRENTS;
+    req->dir_fd = dir_fd;
+    strncpy(req->path, dir_path, sizeof(req->path) - 1);
 
-//     req->path[sizeof(req->path)-1]='\0';
+    req->path[sizeof(req->path)-1]='\0';
 
-//     req->dirents = malloc(DIRENT_BUF_SIZE);
-//     if (!req->dirents) { perror("malloc dirents"); free(req); return; }
+    req->dirents = malloc(DIRENT_BUF_SIZE);
+    if (!req->dirents) { perror("malloc dirents"); free(req); return; }
 
-//     struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
-//     if (!sqe) {
-//         perror("io_uring_get_sqe");
-//         if (req->type == OP_READ_DIRENTS && req->dirents) free(req->dirents);
-//         free(req);
-//         return;
-//     }
+    struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
+    if (!sqe) {
+        perror("io_uring_get_sqe");
+        if (req->type == OP_READ_DIRENTS && req->dirents) free(req->dirents);
+        free(req);
+        return;
+    }
     
-//     _prep_getdents64(sqe,dir_fd,req->dirents,DIRENT_BUF_SIZE);
-//     io_uring_sqe_set_data(sqe,req);
+    _prep_getdents64(sqe,dir_fd,req->dirents,DIRENT_BUF_SIZE);
+    io_uring_sqe_set_data(sqe,req);
 
-//     (*inflight_ops)++;
-// }
+    (*inflight_ops)++;
+}

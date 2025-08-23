@@ -6,17 +6,17 @@
 #include <linux/stat.h>
 #include <linux/limits.h>
 
-// typedef enum{
-//     OP_OPEN,
-//     OP_READ_DIRENTS,
-//     OP_STAT
-// }OpType;
+typedef enum{
+    OP_OPEN,
+    OP_READ_DIRENTS,
+    OP_STAT
+}OpType;
 
 typedef struct Request{
-    // OpType type;
+    OpType type;
     char path[PATH_MAX];
-    // int dir_fd;
-    // struct linux_dirent64 *dirents;
-    // struct statx statx_buf;
+    int dir_fd;
+    struct linux_dirent64 *dirents;
+    struct statx statx_buf;
 }Request;
 
