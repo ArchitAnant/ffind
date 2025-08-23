@@ -1,0 +1,15 @@
+Source: ffind
+Section: utils
+Priority: optional
+Maintainer: Your Name <you@example.com>
+Build-Depends: debhelper-compat (= 13), pkg-config, liburing-dev
+Standards-Version: 4.6.2
+Homepage: https://example.com/ffind
+Rules-Requires-Root: no
+
+Package: ffind
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Fast file finder using io_uring
+ ffind is a fast alternative to find files, implemented using Linux io_uring.
+ 

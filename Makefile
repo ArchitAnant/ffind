@@ -1,22 +1,24 @@
-CC := gcc
-INC_DIR := headers
-
+CC       := gcc
+INC_DIR  := headers
 
 # Use pkg-config if available for liburing
 PKG_CFLAGS := $(shell pkg-config --cflags liburing 2>/dev/null)
 PKG_LIBS   := $(shell pkg-config --libs liburing 2>/dev/null)
 
-CFLAGS := -Wall -Wextra -O2 -I$(INC_DIR) $(PKG_CFLAGS)
-LDLIBS := $(if $(PKG_LIBS),$(PKG_LIBS),-luring)
+CFLAGS  := -Wall -Wextra -O2 -I$(INC_DIR) $(PKG_CFLAGS)
+LDLIBS  := $(if $(PKG_LIBS),$(PKG_LIBS),-luring)
 
-SRC_DIR := src
+SRC_DIR   := src
 BUILD_DIR := build
 
-
 # Source and object files
-SRCS := $(wildcard $(SRC_DIR)/*.c)
-OBJS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+SRCS   := $(wildcard $(SRC_DIR)/*.c)
+OBJS   := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
 TARGET := $(BUILD_DIR)/ffind
+
+# Install prefix (Debian packaging overrides with DESTDIR + PREFIX=/usr)
+PREFIX  ?= /usr
+BINDIR  := $(PREFIX)/bin
 
 all: $(TARGET)
 
@@ -29,10 +31,17 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(INC_DIR)/submissions.h | $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
+install: $(TARGET)
+	mkdir -p $(DESTDIR)$(BINDIR)
+	cp $(TARGET) $(DESTDIR)$(BINDIR)/ffind
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/ffind
+
 clean:
 	rm -rf $(BUILD_DIR)
 
 run: $(TARGET)
 	./$(TARGET) testdir
 
-.PHONY: all clean run
+.PHONY: all clean run install uninstall
