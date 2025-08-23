@@ -1,73 +1,53 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <pthread.h>
+#include <string.h>
+#include <liburing.h>
+#include <limits.h>
 
-#include "../include/worker.h"
-#include "../include/workqueue.h"
+#include "../headers/request.h"
+#include "../headers/submissions.h"
 
 
-int main(int argc,char *argv[]){
 
-    if (argc!=3)
-    {
-        fprintf(stderr,"Usage: %s <path> <search_term>\n", argv[0]);
-        exit(1);
+#define QUEUE_DEPTH 256
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <path> <search_term>\n", argv[0]);
+        return 1;
     }
     const char* search_path = argv[1];
     const char* search_term = argv[2];
-    printf("[SEARCH] Starting in '%s' for files containing '%s'\n",search_path,search_term);
 
+    struct io_uring ring;
+    int ret = io_uring_queue_init(QUEUE_DEPTH, &ring, 0);
+    if (ret < 0) {
+        fprintf(stderr, "io_uring_queue_init: %s\n", strerror(-ret));
+        return 1;
+    }
+    printf("[KICKOFF] searching regex <%s> : : %s\n",search_term,search_path);
+    int inflight_ops = 0;
+    // Kick off the very first task.
+    submit_open_request(search_path, &ring, &inflight_ops);
 
-    // determining a safe thread count
-    const long NPROC = 2*sysconf(_SC_NPROCESSORS_ONLN);
+    // The main event loop. It runs as long as there are operations in flight.
+    while (inflight_ops > 0) {
+        io_uring_submit_and_wait(&ring, 1);
 
-    // init the worker queue
-    WorkQueue q;
-    init_work_queue(&q);
+        struct io_uring_cqe *cqe;
+        unsigned head;
+        unsigned count = 0;
 
-
-    // init an array for number of threads
-    pthread_t threads[NPROC];
-
-    // init the workerargs
-    WorkerArgs wags;
-    wags.queue = &q;
-    wags.search_term = search_term;
-
-    // starting the worker threads
-    for (int i = 0; i < NPROC; i++) {
-        if (pthread_create(&threads[i], NULL, worker_function, &wags) != 0) {
-            perror("Failed to create thread");
-            return 1;
+        // Process all completions that are ready.
+        io_uring_for_each_cqe(&ring, head, cqe) {
+            handle_completion(cqe, search_term, &ring, &inflight_ops);
+            inflight_ops--;
+            count++;
         }
+
+        io_uring_cq_advance(&ring, count);
     }
 
-    // seeding and enqueuing the initial path and queue
-    work_queue_enque(&q,search_path);
-
-
-    // WAIT AND SHUT DOWN PROCESS
-    // wait till the queue is empty
-    pthread_mutex_lock(&q.mutex);
-    while (q.head != NULL || q.active_worker > 0) {
-        pthread_cond_wait(&q.cond, &q.mutex);
-    }
-    pthread_mutex_unlock(&q.mutex);
-
-    pthread_mutex_lock(&q.mutex);
-    q.is_finished = 1;
-    pthread_cond_broadcast(&q.cond);
-    pthread_mutex_unlock(&q.mutex);
-
-    // join all the threads
-    for (int i = 0; i < NPROC; i++)
-    {
-        pthread_join(threads[i],NULL);
-    }
-
-    // work queue clean up
-    destroy_work_queue(&q);
-    
+    io_uring_queue_exit(&ring);
     return 0;
 }

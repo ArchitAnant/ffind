@@ -1,0 +1,7 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: ffind
+Source: https://github.com/ArchitAnant/ffind/
+
+Files: *
+Copyright: 2025 Archit Anant <architanant5@gmail.com>
+License: GPL-2+ / MIT

@@ -1,0 +1,11 @@
+#!/usr/bin/make -f
+# This file tells dpkg-buildpackage how to build/install your program.
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE)
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/ffind PREFIX=/usr

@@ -1,33 +1,47 @@
-# Compiler and flags
-CC = gcc
-CFLAGS = -Wall -Iinclude -g    # -g for debugging symbols
+CC       := gcc
+INC_DIR  := headers
 
-# Source and build directories
-SRC_DIR = src
-BUILD_DIR = build
-SRC = $(SRC_DIR)/main.c $(SRC_DIR)/workqueue.c $(SRC_DIR)/worker.c
-OBJ = $(SRC:%.c=$(BUILD_DIR)/%.o)
+# Use pkg-config if available for liburing
+PKG_CFLAGS := $(shell pkg-config --cflags liburing 2>/dev/null)
+PKG_LIBS   := $(shell pkg-config --libs liburing 2>/dev/null)
 
-# Target binary
-TARGET = $(BUILD_DIR)/ffind
+CFLAGS  := -Wall -Wextra -O2 -I$(INC_DIR) $(PKG_CFLAGS)
+LDLIBS  := $(if $(PKG_LIBS),$(PKG_LIBS),-luring)
 
-# Ensure build directory exists
-$(shell mkdir -p $(BUILD_DIR)/$(SRC_DIR))
+SRC_DIR   := src
+BUILD_DIR := build
 
-# Default rule
+# Source and object files
+SRCS   := $(wildcard $(SRC_DIR)/*.c)
+OBJS   := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRCS))
+TARGET := $(BUILD_DIR)/ffind
+
+# Install prefix (Debian packaging overrides with DESTDIR + PREFIX=/usr)
+PREFIX  ?= /usr
+BINDIR  := $(PREFIX)/bin
+
 all: $(TARGET)
 
-# Link object files to create the binary
-$(TARGET): $(OBJ)
-	$(CC) $(OBJ) -o $(TARGET)
+$(TARGET): $(OBJS) | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)
 
-# Compile source files to object files
-$(BUILD_DIR)/%.o: %.c
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(INC_DIR)/submissions.h | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean build artifacts
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+install: $(TARGET)
+	mkdir -p $(DESTDIR)$(BINDIR)
+	cp $(TARGET) $(DESTDIR)$(BINDIR)/ffind
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/ffind
+
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all clean
+run: $(TARGET)
+	./$(TARGET) testdir
 
+.PHONY: all clean run install uninstall
