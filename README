@@ -46,10 +46,14 @@ The heart of the logic resides in the handle_completion function. Since operatio
 
 A single Request struct holds the state for scanning one directory, transitioning through different phases:
 
-- Open Phase: An openat operation is submitted. When it completes, the function receives a file descriptor (fd).
-- Read Phase: The function stores the fd in the Request struct and submits a getdents64 operation (using the IORING_OP_READ opcode on the directory fd) to read the directory's contents.
-- Process and Recurse: When the read completes, the buffer of directory entries is processed. For each subdirectory found, a new openat request is submitted, creating a new task. For each file, the name is checked against the search term.
-- Terminal State: When a directory read returns 0 bytes, the directory scan is complete. The file descriptor is closed, and all associated memory is freed.
+- Open Phase: 
+An openat operation is submitted. When it completes, the function receives a file descriptor (fd).
+- Read Phase: 
+The function stores the fd in the Request struct and submits a getdents64 operation (using the IORING_OP_READ opcode on the directory fd) to read the directory's contents.
+- Process and Recurse: 
+When the read completes, the buffer of directory entries is processed. For each subdirectory found, a new openat request is submitted, creating a new task. For each file, the name is checked against the search term.
+- Terminal State:
+When a directory read returns 0 bytes, the directory scan is complete. The file descriptor is closed, and all associated memory is freed.
 
 Targeting Efficiency :
 
