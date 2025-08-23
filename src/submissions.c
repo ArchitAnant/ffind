@@ -64,7 +64,7 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         }
 
         char full_path[PATH_MAX];
-        snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
+        snprintf(full_path, sizeof(full_path), "%s%s", req->path, entry->d_name);
 
         // Check the type of the directory entry.
         // Using d_type is much faster than calling stat() for every entry.

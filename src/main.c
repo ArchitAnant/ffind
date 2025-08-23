@@ -25,7 +25,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "io_uring_queue_init: %s\n", strerror(-ret));
         return 1;
     }
-
+    printf("[KICKOFF] searching regex <%s> : : %s\n",search_term,search_path);
     int inflight_ops = 0;
     // Kick off the very first task.
     submit_open_request(search_path, &ring, &inflight_ops);
