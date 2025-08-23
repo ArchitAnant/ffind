@@ -1,31 +1,57 @@
-## Usage
+# Installation
+
+
+### Option 1: Install from Release (.deb)
+
+Download the `.deb` package from the Releases page and install it:
+
+    sudo apt install ./ffind_<version>_<arch>.deb
+
+### Option 2: Build from Source
+
 **Prerequisites**
-ffind requires a modern Linux kernel (5.10+ recommended) and the liburing development library.
+- Linux kernel 5.10+ (recommended)
+- liburing development library
+- build-essential (on Debian/Ubuntu)
 
-### On Debian/Ubuntu
-```shell 
-sudo apt-get install build-essential liburing-dev
-# you can search for equivalent packages for Arch/Fedora.
-```
-### Compile the application
+**Install dependencies on Debian/Ubuntu :**
+
 ```shell
-make
+sudo apt-get install build-essential liburing-dev pkg-config
 ```
 
-### Clean up build files
-```bash
+**Compile and Install :**
+```shell
+make          # build into ./build/ffind
+sudo make install
+```
+
+This installs ffind into /usr/bin/ffind by default.
+
+**Uninstall :**
+```shell
+sudo make uninstall
+```
+
+**Clean build files :**
+```shell
 make clean
 ```
-### Examples
-```shell
-./ffind <path> <search_term>
 
+
+# Usage
+```shell
+ffind <path> <search_term>
+```
+
+Examples:
+```shell
 # Search for all files containing "config" in your home directory
-./ffind ~ config
+ffind ~ config
 
 # Search for all header files containing "net" in /usr/include
-./ffind /usr/include net
+ffind /usr/include net
 
 # Find all Markdown files in the current directory
-./ffind . .md
+ffind . .md
 ```
