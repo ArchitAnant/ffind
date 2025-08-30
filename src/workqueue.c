@@ -50,7 +50,7 @@ void destroy_work_queue(WorkQueue *q){
 }
 
 
-void work_queue_enque(WorkQueue *q,DirTask task){
+void work_queue_enqueue(WorkQueue *q,DirTask task){
     pthread_mutex_lock(&q->mutex);
 
     WorkItem *newWork = malloc(sizeof(struct WorkItem));

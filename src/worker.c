@@ -25,7 +25,7 @@ void *worker_function(void *args){
     while (1)
     {
         DirTask task;
-        if (work_queue_dequeue(q,&task)!=0)
+        if (dequeue_work_queue(q,&task)!=0)
         {
             break;
         }

@@ -71,7 +71,7 @@ void work_queue_enqueue(WorkQueue *q, DirTask task);
  * @param task A pointer to a DirTask struct where the dequeued task will be stored.
  * @return 0 on success, -1 if the queue has been shut down and is empty.
  */
-int work_queue_dequeue(WorkQueue *q, DirTask *task);
+int dequeue_work_queue(WorkQueue *q, DirTask *task);
 
 
 #endif // WORKQUEUE_H
