@@ -11,7 +11,7 @@ typedef struct WorkerArgs {
     WorkQueue *queue;
     const char *search_term;
     struct io_uring *ring;
-    int *inflight_ops;
+    //int *inflight_ops;
     pthread_mutex_t *ring_mutex;
 } WorkerArgs;
 
@@ -49,7 +49,7 @@ void *worker_function(void *args){
                 snprintf(full_path, sizeof(full_path), "%s/%s", task.path, entry->d_name);
 
                 pthread_mutex_lock(wargs->ring_mutex);
-                submit_open_request(full_path,wargs->ring,wargs->inflight_ops);
+                submit_open_request(full_path,wargs->ring);
                 pthread_mutex_unlock(wargs->ring_mutex);
             }
             else if (entry->d_type==DT_REG)

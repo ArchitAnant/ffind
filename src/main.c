@@ -107,12 +107,25 @@ int main(int argc,char *argv[]){
         int is_queue_empty = (q.head == NULL);
         pthread_mutex_unlock(&q.mutex);
 
+        unsigned unsubmitted_sqes = io_uring_sq_ready(&ring);
+        if (unsubmitted_sqes>0)
+        {
+           inflight_ops+=unsubmitted_sqes;
+        }
+        
+
         if (inflight_ops == 0 && is_queue_empty)
         {
+            io_uring_submit(&ring);
+            break;
+        }
+        int submited_count = io_uring_submit_and_wait(&ring,1);
+        if (submited_count<0 && -submited_count!=EAGAIN)
+        {
+            perror("io_uring_submit_and_wait");
             break;
         }
         
-        io_uring_submit_and_wait(&ring, 1);
 
         struct io_uring_cqe *cqe;
         unsigned head;
