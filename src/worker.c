@@ -47,7 +47,7 @@ void *worker_function(void *args){
             {
                 char full_path[PATH_MAX];
                 snprintf(full_path, sizeof(full_path), "%s/%s", task.path, entry->d_name);
-
+                printf("[APPENDING] %s\n",full_path);
                 pthread_mutex_lock(wargs->ring_mutex);
                 submit_open_request(full_path,wargs->ring);
                 pthread_mutex_unlock(wargs->ring_mutex);
