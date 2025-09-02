@@ -1,3 +1,10 @@
+ffind (1.1-1) unstable; urgency=medium
+
+  * Added batching support with io_uring (up to 64 ops).
+
+ -- Archit Anant <architanant5@egmail.com>  Sun, 31 Aug 2025 15:30:00 +0530
+
+
 ffind (1.0-1) unstable; urgency=medium
 
   * Initial release (Closes: #000000)
