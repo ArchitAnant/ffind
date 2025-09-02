@@ -7,7 +7,22 @@
 #include <unistd.h>     
 #include <dirent.h>     
 #include "../headers/request.h"
+#define BATCH_SIZE 64
 
+static int pending_in_batch = 0;
+
+void flush_batch(struct io_uring *ring){
+    if (pending_in_batch>0)
+    {
+        int ret = io_uring_submit(ring);
+        if (ret<0)
+        {
+           fprintf(stderr, "Error in io_uring_submit: %s\n", strerror(-ret));
+        }
+        pending_in_batch = 0;
+    }
+    
+}
 
 void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
     Request *req = malloc(sizeof(Request));
@@ -29,6 +44,13 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     io_uring_sqe_set_data(sqe, req);
 
     (*inflight_ops)++;
+    pending_in_batch++;
+
+    if (pending_in_batch>=BATCH_SIZE)
+    {
+        flush_batch(ring);
+    }
+    
 }
 
 
