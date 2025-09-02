@@ -89,7 +89,7 @@ int main(int argc,char *argv[]){
     pthread_t threads[NPROC];
 
     // init the workerargs
-    WorkerArgs wargs = {&q, search_term, &ring, &ring_mutex};
+    WorkerArgs wargs = {&q, search_term, &ring, &inflight_ops, &ring_mutex};
 
     for (long i = 0; i < NPROC; i++)
     {
@@ -103,53 +103,41 @@ int main(int argc,char *argv[]){
 
     while (1)
     {
-        int submitted = io_uring_submit(&ring);
-        if (submitted < 0) {
-            perror("io_uring_submit");
-            break;
-        }
-
         pthread_mutex_lock(&q.mutex);
         int is_queue_empty = (q.head == NULL);
-
-        // THE ATOMIC CHECK
-        if (inflight_ops == 0 && is_queue_empty) {
-            // If there are no pending I/O ops and no dirs for workers to scan, we are done.
-            pthread_mutex_unlock(&q.mutex);
-            break;
-        }
         pthread_mutex_unlock(&q.mutex);
 
-        // Now wait for a completion
-        struct io_uring_cqe *cqe;
-        int ret = io_uring_wait_cqe(&ring, &cqe);
-        if (ret < 0) {
-            if (-ret == EINTR) continue; // Interrupted, just try again
-            perror("io_uring_wait_cqe");
+        unsigned unsubmitted_sqes = io_uring_sq_ready(&ring);
+        if (unsubmitted_sqes>0)
+        {
+           inflight_ops+=unsubmitted_sqes;
+        }
+        
+
+        if (inflight_ops == 0 && is_queue_empty)
+        {
+            io_uring_submit(&ring);
             break;
         }
+        int submited_count = io_uring_submit_and_wait(&ring,1);
+        if (submited_count<0 && -submited_count!=EAGAIN)
+        {
+            perror("io_uring_submit_and_wait");
+            break;
+        }
+        
 
+        struct io_uring_cqe *cqe;
         unsigned head;
         unsigned count = 0;
-        printf(" INF_OP : %d\n",inflight_ops);
-        io_uring_for_each_cqe(&ring, head, cqe) {
+
+        io_uring_for_each_cqe(&ring, head, cqe){
             handle_completion(cqe, &q);
             inflight_ops--;
             count++;
         }
-        io_uring_cq_advance(&ring, count);
 
-        pthread_mutex_lock(&ring_mutex);
-        pthread_mutex_lock(&q.mutex);
-        printf(" INF_OP : %d\n",inflight_ops);
-        is_queue_empty = (q.head == NULL);
-        if (inflight_ops == 0 && is_queue_empty) {
-            pthread_mutex_unlock(&q.mutex);
-            pthread_mutex_unlock(&ring_mutex);
-            break; // It is now safe to break
-        }
-        pthread_mutex_unlock(&q.mutex);
-        pthread_mutex_unlock(&ring_mutex);
+        io_uring_cq_advance(&ring, count);
     }
 
     pthread_mutex_lock(&q.mutex);
