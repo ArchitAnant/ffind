@@ -3,43 +3,21 @@
 
 #include <pthread.h>
 #include <liburing.h>
-#include "workqueue.h" // The worker needs to know about the WorkQueue type
+#include "workqueue.h"
 
-/*
- * WorkerArgs: A struct to pass all shared resources and arguments to each
- * worker thread upon creation.
- */
+// Arguments passed to each worker thread
 typedef struct WorkerArgs {
-    WorkQueue *queue;            // Pointer to the shared task queue
-    const char *search_term;     // The substring to search for in filenames
-    struct io_uring *ring;       // Pointer to the shared io_uring instance
-    int *inflight_ops;           // Pointer to the counter for pending async operations
-    pthread_mutex_t *ring_mutex; // Pointer to the mutex protecting the io_uring submission queue
+    WorkQueue *queue;             // Shared work queue
+    const char *search_term;      // Term to search for in file names
+    struct io_uring *ring;        // io_uring instance
+    pthread_mutex_t *ring_mutex;  // Mutex to synchronize ring usage
 } WorkerArgs;
 
+// Submits an open request for a given path to io_uring
+void submit_open_request(const char *path, struct io_uring *ring);
 
-/* --- PUBLIC API --- */
-
-/*
- * The main entry point for each worker thread.
- * This function contains the primary worker loop: it dequeues directory tasks,
- * scans them using readdir, and submits new asynchronous 'open' requests for
- * any subdirectories it finds.
- *
- * @param args A void pointer to a WorkerArgs struct containing all necessary
- *             shared state and arguments.
- * @return Always returns NULL.
- */
+// Worker thread function
+// Each worker dequeues tasks and processes directories/files
 void *worker_function(void *args);
-
-/*
- * NOTE: The function 'submit_open_request' is *called* by the worker, but its
- * definition belongs in the file that manages the io_uring dispatcher (e.g., main.c).
- * A forward declaration for it should be included in any file that calls it.
- * Example (to be placed in worker.c):
- *
- * void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops);
- *
- */
 
 #endif // WORKER_H

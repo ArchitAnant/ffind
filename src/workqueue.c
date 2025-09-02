@@ -94,10 +94,25 @@ int dequeue_work_queue(WorkQueue *q, DirTask *task){
         q->tail = NULL;
     }
 
+    q->active_worker++;
+
     pthread_mutex_unlock(&q->mutex);
 
     *task = item->task;
     free(item);
     return 0;
+    
+}
+
+void work_queue_task_done(WorkQueue *q){
+    pthread_mutex_lock(&q->mutex);
+    q->active_worker--;
+
+    if (q->active_worker == 0 && q->head==NULL)
+    {
+        pthread_cond_signal(&q->cond);
+    }
+
+    pthread_mutex_unlock(&q->mutex);
     
 }

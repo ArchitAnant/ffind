@@ -6,19 +6,16 @@
 #include <limits.h>
 #include <liburing.h>
 #include "../include/workqueue.h"
+#include "../include/worker.h"
 
-typedef struct WorkerArgs {
-    WorkQueue *queue;
-    const char *search_term;
-    struct io_uring *ring;
-    //int *inflight_ops;
-    pthread_mutex_t *ring_mutex;
-} WorkerArgs;
+void submit_open_request(const char *path, struct io_uring *ring);
+
 
 void *worker_function(void *args){
     WorkerArgs *wargs = (WorkerArgs*)args;
 
     WorkQueue *q = wargs->queue;
+    
 
     const char *search_term = wargs->search_term;
 
@@ -49,7 +46,7 @@ void *worker_function(void *args){
                 snprintf(full_path, sizeof(full_path), "%s/%s", task.path, entry->d_name);
 
                 pthread_mutex_lock(wargs->ring_mutex);
-                printf("submitting new openpath : %s\n",full_path);
+                //printf("submitting new openpath : %s\n",full_path);
                 submit_open_request(full_path,wargs->ring);
                 pthread_mutex_unlock(wargs->ring_mutex);
             }
@@ -70,6 +67,7 @@ void *worker_function(void *args){
             
         }
         closedir(dir);
+        work_queue_task_done(q);
     }
 
     return NULL;
