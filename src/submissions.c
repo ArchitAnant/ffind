@@ -49,7 +49,7 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     if (pending_in_batch>=BATCH_SIZE || force_flush)
     {
         flush_batch(ring);
-        pending_in_batch=0;
+        //pending_in_batch=0;
     }
     
 }
@@ -101,7 +101,7 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
     }
     if (pending_in_batch>0)
     {
-        flush_batch(&ring);
+        flush_batch(ring);
     }
     
 
