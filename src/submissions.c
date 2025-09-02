@@ -7,9 +7,24 @@
 #include <unistd.h>     
 #include <dirent.h>     
 #include "../headers/request.h"
+#define BATCH_SIZE 64
 
+static int pending_in_batch = 0;
 
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
+void flush_batch(struct io_uring *ring){
+    if (pending_in_batch>0)
+    {
+        int ret = io_uring_submit(ring);
+        if (ret<0)
+        {
+           fprintf(stderr, "Error in io_uring_submit: %s\n", strerror(-ret));
+        }
+        pending_in_batch = 0;
+    }
+    
+}
+
+void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops,int force_flush) {
     Request *req = malloc(sizeof(Request));
     if (!req) {
         perror("malloc request");
@@ -29,6 +44,14 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     io_uring_sqe_set_data(sqe, req);
 
     (*inflight_ops)++;
+    pending_in_batch++;
+
+    if (pending_in_batch>=BATCH_SIZE || force_flush)
+    {
+        flush_batch(ring);
+        //pending_in_batch=0;
+    }
+    
 }
 
 
@@ -67,7 +90,7 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         // Using d_type is much faster than calling stat() for every entry.
         if (entry->d_type == DT_DIR) {
             // RECURSIVE STEP: If it's a directory, submit a new async 'openat' request.
-            submit_open_request(full_path, ring, inflight_ops);
+            submit_open_request(full_path, ring, inflight_ops,0);
         } else if (entry->d_type == DT_REG) {
             // It's a regular file. Check if its name matches the search term.
             if (strstr(entry->d_name, search_term) != NULL) {
@@ -76,6 +99,11 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         }
         // Note: We are ignoring DT_UNKNOWN, symlinks, etc. for simplicity.
     }
+    if (pending_in_batch>0)
+    {
+        flush_batch(ring);
+    }
+    
 
     // Clean up resources for the directory we just finished scanning.
     closedir(dir_stream); // This also closes the underlying dir_fd.
