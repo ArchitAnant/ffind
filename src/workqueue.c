@@ -43,7 +43,6 @@ void init_work_queue(WorkQueue *q){
 }
 
 void destroy_work_queue(WorkQueue *q){
-
     pthread_mutex_destroy(&q->mutex);
     pthread_cond_destroy(&q->cond);
 

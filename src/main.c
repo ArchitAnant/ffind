@@ -33,7 +33,7 @@ void handle_completion(struct io_uring_cqe *cqe, WorkQueue *q){
     free(req);
 }
 
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
+void submit_open_request(const char *path, struct io_uring *ring) {
     Request *req = malloc(sizeof(Request));
     if (!req) {
         perror("malloc request");
@@ -54,7 +54,7 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     io_uring_prep_openat(sqe, AT_FDCWD, path, O_RDONLY | O_DIRECTORY, 0);
     io_uring_sqe_set_data(sqe, req);
 
-    (*inflight_ops)++;
+    //(*inflight_ops)++;
 }
 
 
@@ -97,7 +97,7 @@ int main(int argc,char *argv[]){
     }
     
     pthread_mutex_lock(&ring_mutex);
-    submit_open_request(search_path, &ring, &inflight_ops);
+    submit_open_request(search_path, &ring);
     pthread_mutex_unlock(&ring_mutex);
 
 

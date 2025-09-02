@@ -49,6 +49,7 @@ void *worker_function(void *args){
                 snprintf(full_path, sizeof(full_path), "%s/%s", task.path, entry->d_name);
 
                 pthread_mutex_lock(wargs->ring_mutex);
+                printf("submitting new openpath : %s\n",full_path);
                 submit_open_request(full_path,wargs->ring);
                 pthread_mutex_unlock(wargs->ring_mutex);
             }
