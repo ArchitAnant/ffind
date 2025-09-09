@@ -84,22 +84,23 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         char full_path[PATH_MAX];
         snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
 
-        if (entry->d_type == DT_DIR) {
-            submit_open_request(full_path, ring, inflight_ops, 0);
-        } else if (entry->d_type == DT_REG) {
-            if (strstr(entry->d_name, search_term) != NULL) {
-                printf("[FOUND] %s\n", full_path);
+        struct stat st;
+        if (entry->d_type == DT_UNKNOWN) {
+            if (fstatat(dir_fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
+                continue;
             }
-        } else if (entry->d_type == DT_UNKNOWN) {
-            struct stat st;
-            if (fstatat(dir_fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
-                if (S_ISDIR(st.st_mode)) {
-                    submit_open_request(full_path, ring, inflight_ops, 0);
-                } else if (S_ISREG(st.st_mode)) {
-                    if (strstr(entry->d_name, search_term) != NULL) {
-                        printf("[FOUND] %s\n", full_path);
-                    }
-                }
+        } else {
+            // emulate what traverse_path does
+            st.st_mode = (entry->d_type == DT_DIR) ? S_IFDIR : 
+                        (entry->d_type == DT_REG) ? S_IFREG : 0;
+        }
+
+        // Now decide based on st.st_mode
+        if (S_ISDIR(st.st_mode)) {
+            submit_open_request(full_path, ring, inflight_ops, 0);
+        } else if (S_ISREG(st.st_mode)) {
+            if (strstr(full_path, search_term)) {
+                printf("[FOUND] %s\n", full_path);
             }
         }
     }
