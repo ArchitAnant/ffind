@@ -84,7 +84,17 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
 
         // We need the full path for printing and recursion, so build it once.
         char full_path[PATH_MAX];
-        snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
+        size_t len = strlen(req->path);
+        if (len > 0 && req->path[len - 1] == '/')
+            snprintf(full_path, sizeof(full_path), "%s%s", req->path, entry->d_name);
+        else
+            snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
+
+        // Optional safety check
+        if (strlen(full_path) >= PATH_MAX) {
+            fprintf(stderr, "[WARN] path too long, skipping: %s\n", full_path);
+            continue;
+        }
 
         // Use d_type for a huge performance gain, falling back to lstat.
         if (entry->d_type == DT_UNKNOWN) {
