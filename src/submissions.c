@@ -6,25 +6,27 @@
 #include <fcntl.h>      
 #include <unistd.h>     
 #include <dirent.h>     
+#include <sys/stat.h>   
+#include <errno.h>      
 #include "../headers/request.h"
+
 #define BATCH_SIZE 64
 
 static int pending_in_batch = 0;
 
-void flush_batch(struct io_uring *ring){
-    if (pending_in_batch>0)
-    {
+/* Flush batched SQEs */
+void flush_batch(struct io_uring *ring) {
+    if (pending_in_batch > 0) {
         int ret = io_uring_submit(ring);
-        if (ret<0)
-        {
-           fprintf(stderr, "Error in io_uring_submit: %s\n", strerror(-ret));
+        if (ret < 0) {
+            fprintf(stderr, "Error in io_uring_submit: %s\n", strerror(-ret));
         }
         pending_in_batch = 0;
     }
-    
 }
 
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops,int force_flush) {
+/* Submit an async openat */
+void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops, int force_flush) {
     Request *req = malloc(sizeof(Request));
     if (!req) {
         perror("malloc request");
@@ -46,38 +48,34 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     (*inflight_ops)++;
     pending_in_batch++;
 
-    if (pending_in_batch>=BATCH_SIZE || force_flush)
-    {
+    if (pending_in_batch >= BATCH_SIZE || force_flush) {
         flush_batch(ring);
-        //pending_in_batch=0;
     }
-    
 }
 
-
+/* Handle one completed openat */
 void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct io_uring *ring, int *inflight_ops) {
     Request *req = (Request *)io_uring_cqe_get_data(cqe);
 
-    // Check if the openat operation failed (e.g., permission denied).
     if (cqe->res < 0) {
-        // fprintf(stderr, "Warning: Failed to open directory '%s': %s\n", req->path, strerror(-cqe->res));
+        // Open failed (e.g. permission denied)
         free(req);
+        (*inflight_ops)--;
         return;
     }
 
     int dir_fd = cqe->res;
 
-    // Convert the file descriptor to a DIR stream for use with readdir.
     DIR *dir_stream = fdopendir(dir_fd);
     if (!dir_stream) {
         perror("fdopendir");
         close(dir_fd);
         free(req);
+        (*inflight_ops)--;
         return;
     }
 
     struct dirent *entry;
-    // Loop through directory entries synchronously. This is CPU-bound work.
     while ((entry = readdir(dir_stream)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -86,26 +84,31 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         char full_path[PATH_MAX];
         snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
 
-        // Check the type of the directory entry.
-        // Using d_type is much faster than calling stat() for every entry.
         if (entry->d_type == DT_DIR) {
-            // RECURSIVE STEP: If it's a directory, submit a new async 'openat' request.
-            submit_open_request(full_path, ring, inflight_ops,0);
+            submit_open_request(full_path, ring, inflight_ops, 0);
         } else if (entry->d_type == DT_REG) {
-            // It's a regular file. Check if its name matches the search term.
             if (strstr(entry->d_name, search_term) != NULL) {
                 printf("[FOUND] %s\n", full_path);
             }
+        } else if (entry->d_type == DT_UNKNOWN) {
+            struct stat st;
+            if (fstatat(dir_fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+                if (S_ISDIR(st.st_mode)) {
+                    submit_open_request(full_path, ring, inflight_ops, 0);
+                } else if (S_ISREG(st.st_mode)) {
+                    if (strstr(entry->d_name, search_term) != NULL) {
+                        printf("[FOUND] %s\n", full_path);
+                    }
+                }
+            }
         }
-        // Note: We are ignoring DT_UNKNOWN, symlinks, etc. for simplicity.
     }
-    if (pending_in_batch>0)
-    {
+
+    if (pending_in_batch > 0) {
         flush_batch(ring);
     }
-    
 
-    // Clean up resources for the directory we just finished scanning.
-    closedir(dir_stream); // This also closes the underlying dir_fd.
+    closedir(dir_stream);
     free(req);
+    (*inflight_ops)--;
 }
