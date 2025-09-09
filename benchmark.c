@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 
 // --- Colors ---
 #define PURPLE "\033[0;35m"
@@ -36,6 +37,14 @@ int run_cmd(char *cmd, char *arg1, char *arg2,
 
     pid = fork();
     if (pid == 0) {
+        // Redirect stdout and stderr to /dev/null
+        int fd = open("/dev/null", O_WRONLY);
+        if (fd != -1) {
+            dup2(fd, STDOUT_FILENO);
+            dup2(fd, STDERR_FILENO);
+            close(fd);
+        }
+
         execlp(cmd, cmd, arg1, arg2, (char *)NULL);
         perror("exec failed");
         exit(1);
@@ -78,8 +87,8 @@ int run_cmd(char *cmd, char *arg1, char *arg2,
 }
 
 int main() {
-    char *dirs[] = {"testdir"};
-    char *regex = "*.txt";
+    char *dirs[] = {"testdir","test1","test"};
+    char *regex = "file_.dat";
     int num_dirs = sizeof(dirs) / sizeof(dirs[0]);
 
     for (int i = 0; i < num_dirs; i++) {
@@ -89,30 +98,30 @@ int main() {
         double user1 = 0, sys1 = 0, user2 = 0, sys2 = 0;
         double total1 = 0, total2 = 0;
         int rc1 = run_cmd("find", dirs[i], regex, &user1, &sys1, 1);
-        int rc2 = run_cmd("./stupid", "", "", &user2, &sys2, 1);
+        int rc2 = run_cmd("ffind", dirs[i], regex, &user2, &sys2, 1);
 
         if (rc1 == 124) {
             printf("find:\t" GRAY "[STALL]\n" NC);
         } else {
             total1 = user1 + sys1;
-            printf("find:\t" GRAY "[%.3f]\n" NC, total1);
+            printf("find:\t" GRAY "[%.5f]\n" NC, total1);
         }
 
         if (rc2 == 124) {
-            printf("ffind:\t" GREEN "[STALL]\n" NC);
+            printf("ffind:\t [STALL]\n" NC);
         } else {
             total2 = user2 + sys2;
-            printf("ffind:\t" GREEN "[%.3f]\n" NC, total2);
+            printf("ffind:\t [%.5f]\n" NC, total2);
         }
 
         if (rc1 == 124 || rc2 == 124) {
             printf("diff:\t" RED "[STALL]\n" NC);
         } else {
-            double diff = total1 - total2;
+            double diff = total2 - total1;
             if (diff > 0.0)
-                printf("diff:\t" RED "[%.3f]\n" NC, diff);
+                printf("diff:\t" RED "[%.6f]\n" NC, diff);
             else if (diff < 0.0)
-                printf("diff:\t" GREEN "[%.3f]\n" NC, diff);
+                printf("diff:\t" GREEN "[%.5f]\n" NC, diff);
             else
                 printf("diff:\t" GRAY "[0.000]\n" NC);
         }
