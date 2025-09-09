@@ -9,7 +9,7 @@
 
 
 
-#define QUEUE_DEPTH 256
+#define QUEUE_DEPTH 512
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
         // Process all completions that are ready.
         io_uring_for_each_cqe(&ring, head, cqe) {
             handle_completion(cqe, search_term, &ring, &inflight_ops);
-            inflight_ops--;
+            //inflight_ops--;
             count++;
         }
 

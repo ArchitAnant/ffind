@@ -53,11 +53,12 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     }
 }
 
-/* Handle one completed openat */
 void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct io_uring *ring, int *inflight_ops) {
     Request *req = (Request *)io_uring_cqe_get_data(cqe);
 
     if (cqe->res < 0) {
+        fprintf(stderr, "[OPEN FAILED] %s : %s\n", req->path, strerror(-cqe->res));
+
         // Open failed (e.g. permission denied)
         free(req);
         (*inflight_ops)--;
@@ -75,50 +76,46 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         return;
     }
 
-        struct dirent *entry;
+    struct dirent *entry;
     while ((entry = readdir(dir_stream)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
+        // We need the full path for printing and recursion, so build it once.
         char full_path[PATH_MAX];
         snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
 
-        struct stat st;
-
-        switch (entry->d_type) {
-            case DT_DIR:
-                st.st_mode = S_IFDIR;
-                break;
-            case DT_REG:
-                st.st_mode = S_IFREG;
-                break;
-            case DT_LNK:
-                st.st_mode = S_IFLNK;
-                break;
-            default:
-                // Fallback if d_type is unknown or unusual (FIFO, socket, etc.)
-                if (fstatat(dir_fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
-                    continue;
+        // Use d_type for a huge performance gain, falling back to lstat.
+        if (entry->d_type == DT_UNKNOWN) {
+            struct stat st;
+            if (lstat(full_path, &st) == -1) {
+                perror(full_path);
+                continue;
+            }
+            if (S_ISDIR(st.st_mode)) {
+                submit_open_request(full_path, ring, inflight_ops, 0);
+            } else if (S_ISREG(st.st_mode)) {
+                if (strstr(entry->d_name, search_term)) {
+                    printf("[FOUND] %s\n", full_path);
                 }
-                break;
-        }
-
-        if (S_ISDIR(st.st_mode)) {
+            }
+        } else if (entry->d_type == DT_DIR) {
             submit_open_request(full_path, ring, inflight_ops, 0);
-        } else if (S_ISREG(st.st_mode)) {
-            if (strstr(full_path, search_term)) {
+        } else if (entry->d_type == DT_REG) {
+            if (strstr(entry->d_name, search_term)) {
                 printf("[FOUND] %s\n", full_path);
             }
         }
-        // You could also decide what to do with symlinks here if needed.
+
     }
 
+    // Flush any remaining batched submissions for this directory.
     if (pending_in_batch > 0) {
         flush_batch(ring);
     }
 
-    closedir(dir_stream);
+    closedir(dir_stream); // This also closes dir_fd
     free(req);
     (*inflight_ops)--;
 }
