@@ -75,7 +75,7 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         return;
     }
 
-    struct dirent *entry;
+        struct dirent *entry;
     while ((entry = readdir(dir_stream)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -85,17 +85,25 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
         snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
 
         struct stat st;
-        if (entry->d_type == DT_UNKNOWN) {
-            if (fstatat(dir_fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
-                continue;
-            }
-        } else {
-            // emulate what traverse_path does
-            st.st_mode = (entry->d_type == DT_DIR) ? S_IFDIR : 
-                        (entry->d_type == DT_REG) ? S_IFREG : 0;
+
+        switch (entry->d_type) {
+            case DT_DIR:
+                st.st_mode = S_IFDIR;
+                break;
+            case DT_REG:
+                st.st_mode = S_IFREG;
+                break;
+            case DT_LNK:
+                st.st_mode = S_IFLNK;
+                break;
+            default:
+                // Fallback if d_type is unknown or unusual (FIFO, socket, etc.)
+                if (fstatat(dir_fd, entry->d_name, &st, AT_SYMLINK_NOFOLLOW) == -1) {
+                    continue;
+                }
+                break;
         }
 
-        // Now decide based on st.st_mode
         if (S_ISDIR(st.st_mode)) {
             submit_open_request(full_path, ring, inflight_ops, 0);
         } else if (S_ISREG(st.st_mode)) {
@@ -103,6 +111,7 @@ void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct
                 printf("[FOUND] %s\n", full_path);
             }
         }
+        // You could also decide what to do with symlinks here if needed.
     }
 
     if (pending_in_batch > 0) {
