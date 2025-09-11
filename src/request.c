@@ -14,6 +14,8 @@ typedef struct WorkerTaskArgs{
     struct io_uring *ring;
     int *inflight_ops;
     pthread_mutex_t *ring_mutex; 
+    int *active_task;
+    pthread_mutex_t *task_counter_mutex;
 }WorkerTaskArgs;
 
 typedef struct AppContext{
@@ -22,5 +24,7 @@ typedef struct AppContext{
     int *inflight_ops;
     pthread_mutex_t *ring_mutex;
     threadpool pool;
+    int *active_task;
+    pthread_mutex_t *task_counter_mutex;
 }AppContext;
 

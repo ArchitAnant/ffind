@@ -69,6 +69,9 @@ void readdir_worker_function(void *args) {
         }
     }
     closedir(dir_stream);
+    pthread_mutex_lock(task->task_counter_mutex);
+    (*task->active_task)--;
+    pthread_mutex_unlock(task->task_counter_mutex);
     free(task);
 }
 
@@ -128,6 +131,12 @@ void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
     task_args->ring = ctx->ring; 
     task_args->inflight_ops = ctx->inflight_ops;
     task_args->ring_mutex = ctx->ring_mutex;
+    task_args->active_task = ctx->active_task;
+    task_args->task_counter_mutex = ctx->task_counter_mutex;
+
+    pthread_mutex_lock(ctx->task_counter_mutex);
+    (*ctx->active_task)++;
+    pthread_mutex_unlock(ctx->task_counter_mutex);
 
     thpool_add_work(ctx->pool, readdir_worker_function, task_args);
     free(req);

@@ -31,14 +31,18 @@ int main(int argc, char *argv[]) {
     io_uring_queue_init(256, &ring, 0);
 
     int inflight_ops = 0;
+    int active_tasks = 0;
     pthread_mutex_t ring_mutex;
+    pthread_mutex_t task_couter_mutex;
     pthread_mutex_init(&ring_mutex, NULL);
+    pthread_mutex_init(&task_couter_mutex, NULL);
 
     // --- 2. Create the Thread Pool ---
     threadpool pool = thpool_init(NPROC);
 
     // --- 3. Setup App Context ---
-    AppContext ctx = { search_term, &ring, &inflight_ops, &ring_mutex, pool };
+    AppContext ctx = { search_term, &ring, &inflight_ops, &ring_mutex, pool ,&active_tasks,&task_couter_mutex};
+
 
     // --- 4. Seed Initial Work ---
     pthread_mutex_lock(&ring_mutex);
@@ -46,22 +50,29 @@ int main(int argc, char *argv[]) {
     pthread_mutex_unlock(&ring_mutex);
 
     // --- 5. Main I/O Event Loop ---
-    while (inflight_ops > 0) {
+    while (inflight_ops > 0 || active_tasks>0) {
         struct io_uring_cqe *cqe;
-        int ret = io_uring_wait_cqe(&ring, &cqe);
-        if (ret < 0) {
-            if (-ret == EINTR) continue;
-            perror("io_uring_wait_cqe");
-            break;
-        }
 
-        unsigned head;
-        unsigned count = 0;
-        io_uring_for_each_cqe(&ring, head, cqe) {
-            handle_completion(cqe, &ctx);
-            count++;
+        if (inflight_ops>0)
+        {
+            int ret = io_uring_wait_cqe(&ring, &cqe);
+            if (ret < 0) {
+                if (-ret == EINTR) continue;
+                perror("io_uring_wait_cqe");
+                break;
+            }
+
+            unsigned head;
+            unsigned count = 0;
+            io_uring_for_each_cqe(&ring, head, cqe) {
+                handle_completion(cqe, &ctx);
+                count++;
+            }
+            io_uring_cq_advance(&ring, count);
         }
-        io_uring_cq_advance(&ring, count);
+        else{
+            usleep(1000);
+        }
     }
 
     // --- 6. Graceful Shutdown ---
