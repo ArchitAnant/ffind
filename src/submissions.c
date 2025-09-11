@@ -7,11 +7,13 @@
 #include <unistd.h>     
 #include <dirent.h>     
 #include <sys/stat.h>   
+#include <pthread.h>
 #include <errno.h>      
+
 #include "../headers/request.h"
+#include "../headers/thpool.h"
 
 #define BATCH_SIZE 64
-
 static int pending_in_batch = 0;
 
 /* Flush batched SQEs */
@@ -53,79 +55,84 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
     }
 }
 
-void handle_completion(struct io_uring_cqe *cqe, const char *search_term, struct io_uring *ring, int *inflight_ops) {
+void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
     Request *req = (Request *)io_uring_cqe_get_data(cqe);
 
     if (cqe->res < 0) {
-        fprintf(stderr, "[OPEN FAILED] %s : %s\n", req->path, strerror(-cqe->res));
-
-        // Open failed (e.g. permission denied)
         free(req);
-        (*inflight_ops)--;
+        pthread_mutex_lock(ctx->ring_mutex);
+        (*ctx->inflight_ops)--;
+        pthread_mutex_unlock(ctx->ring_mutex);
         return;
     }
 
-    int dir_fd = cqe->res;
-
-    DIR *dir_stream = fdopendir(dir_fd);
-    if (!dir_stream) {
-        perror("fdopendir");
-        close(dir_fd);
+    WorkerTaskArgs *task_args = malloc(sizeof(WorkerTaskArgs));
+    if (!task_args) { 
+        perror("malloc WorkerTaskArgs");
+        close(cqe->res);
         free(req);
-        (*inflight_ops)--;
+        pthread_mutex_lock(ctx->ring_mutex);
+        (*ctx->inflight_ops)--;
+        pthread_mutex_unlock(ctx->ring_mutex);
+        return;
+     }
+
+    task_args->dir_fd = cqe->res;
+    strncpy(task_args->path, req->path, PATH_MAX);
+    task_args->search_term = ctx->search_term;
+    task_args->ring = ctx->ring; 
+    task_args->inflight_ops = ctx->inflight_ops;
+    task_args->ring_mutex = ctx->ring_mutex;
+
+    thpool_add_work(ctx->pool, readdir_worker_function, task_args);
+    free(req);
+
+    pthread_mutex_lock(ctx->ring_mutex);
+    (*ctx->inflight_ops)--;
+    pthread_mutex_unlock(ctx->ring_mutex);
+}
+
+void readdir_worker_function(void *args) {
+    WorkerTaskArgs *task = (WorkerTaskArgs*)args;
+
+    DIR *dir_stream = fdopendir(task->dir_fd);
+    if (!dir_stream) {
+        close(task->dir_fd);
+        free(task);
         return;
     }
 
     struct dirent *entry;
     while ((entry = readdir(dir_stream)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        
+        char full_path[PATH_MAX]; 
+        snprintf(full_path, sizeof(full_path), "%s/%s", task->path, entry->d_name);
 
-        // We need the full path for printing and recursion, so build it once.
-        char full_path[PATH_MAX];
-        size_t len = strlen(req->path);
-        if (len > 0 && req->path[len - 1] == '/')
-            snprintf(full_path, sizeof(full_path), "%s%s", req->path, entry->d_name);
-        else
-            snprintf(full_path, sizeof(full_path), "%s/%s", req->path, entry->d_name);
-
-        // Optional safety check
-        if (strlen(full_path) >= PATH_MAX) {
-            fprintf(stderr, "[WARN] path too long, skipping: %s\n", full_path);
-            continue;
-        }
-
-        // Use d_type for a huge performance gain, falling back to lstat.
-        if (entry->d_type == DT_UNKNOWN) {
+        if (entry->d_type == DT_DIR) {
+            pthread_mutex_lock(task->ring_mutex);
+            submit_open_request(full_path, task->ring, task->inflight_ops, 0);
+            pthread_mutex_unlock(task->ring_mutex);
+        } else if (entry->d_type == DT_REG) {
+            if (strstr(entry->d_name, task->search_term)) {
+                printf("[FOUND] %s\n", full_path);
+            }
+        } else if (entry->d_type == DT_UNKNOWN) {
             struct stat st;
             if (lstat(full_path, &st) == -1) {
-                perror(full_path);
                 continue;
             }
             if (S_ISDIR(st.st_mode)) {
-                submit_open_request(full_path, ring, inflight_ops, 0);
+                pthread_mutex_lock(task->ring_mutex);
+                submit_open_request(full_path, task->ring, task->inflight_ops, 0);
+                pthread_mutex_unlock(task->ring_mutex);
             } else if (S_ISREG(st.st_mode)) {
-                if (strstr(entry->d_name, search_term)) {
+                if (strstr(entry->d_name, task->search_term)) {
                     printf("[FOUND] %s\n", full_path);
                 }
             }
-        } else if (entry->d_type == DT_DIR) {
-            submit_open_request(full_path, ring, inflight_ops, 0);
-        } else if (entry->d_type == DT_REG) {
-            if (strstr(entry->d_name, search_term)) {
-                printf("[FOUND] %s\n", full_path);
-            }
         }
-
     }
-
-    // Flush any remaining batched submissions for this directory.
-    if (pending_in_batch > 0) {
-        flush_batch(ring);
-    }
-
-    closedir(dir_stream); // This also closes dir_fd
-    free(req);
-    (*inflight_ops)--;
+    closedir(dir_stream);
+    free(task);
 }

@@ -1,29 +1,51 @@
-#ifndef IO_URING_OPS_H
-#define IO_URING_OPS_H
+#ifndef SUBMISSION_H
+#define SUBMISSION_H
 
 #include <liburing.h>
-#include "../headers/request.h"
+#include <pthread.h>
+#include <limits.h>
 
-/**
- * Submit an openat request for a directory.
- *
- * @param path          Path to directory
- * @param ring          Pointer to initialized io_uring
- * @param inflight_ops  Counter for in-flight operations
- */
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops);
+// Forward declaration of threadpool
+struct thpool_;
+typedef struct thpool_ *threadpool;
 
-/**
- * Handle an io_uring completion event.
- *
- * @param cqe           Completion Queue Entry
- * @param search_term   String to search for in file names
- * @param ring          Pointer to initialized io_uring
- * @param inflight_ops  Counter for in-flight operations
- */
-void handle_completion(struct io_uring_cqe *cqe,
-                       const char *search_term,
-                       struct io_uring *ring,
-                       int *inflight_ops);
+// ---- Request structure ----
+typedef struct {
+    char path[PATH_MAX];
+} Request;
 
-#endif // IO_URING_OPS_H
+// ---- Worker task args ----
+typedef struct {
+    int dir_fd;
+    char path[PATH_MAX];
+    const char *search_term;
+    struct io_uring *ring;
+    int *inflight_ops;
+    pthread_mutex_t *ring_mutex;
+} WorkerTaskArgs;
+
+// ---- App context ----
+typedef struct {
+    const char *search_term;
+    struct io_uring *ring;
+    int *inflight_ops;
+    pthread_mutex_t *ring_mutex;
+    threadpool pool;
+} AppContext;
+
+// ---- Function declarations ----
+
+// Flush batched SQEs
+void flush_batch(struct io_uring *ring);
+
+// Submit async openat request
+void submit_open_request(const char *path, struct io_uring *ring,
+                         int *inflight_ops, int force_flush);
+
+// Handle completion of openat
+void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx);
+
+// Worker: readdir + scheduling recursion
+void readdir_worker_function(void *args);
+
+#endif // SUBMISSION_H
