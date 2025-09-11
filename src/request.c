@@ -1,5 +1,7 @@
 #include <limits.h>
 #include <linux/limits.h>
+#include <pthread.h>
+#include <thpool.h>
 
 typedef struct Request{
     char path[PATH_MAX];

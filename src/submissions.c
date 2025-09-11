@@ -27,6 +27,51 @@ void flush_batch(struct io_uring *ring) {
     }
 }
 
+void readdir_worker_function(void *args) {
+    WorkerTaskArgs *task = (WorkerTaskArgs*)args;
+
+    DIR *dir_stream = fdopendir(task->dir_fd);
+    if (!dir_stream) {
+        close(task->dir_fd);
+        free(task);
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir_stream)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        
+        char full_path[PATH_MAX]; 
+        snprintf(full_path, sizeof(full_path), "%s/%s", task->path, entry->d_name);
+
+        if (entry->d_type == DT_DIR) {
+            pthread_mutex_lock(task->ring_mutex);
+            submit_open_request(full_path, task->ring, task->inflight_ops, 0);
+            pthread_mutex_unlock(task->ring_mutex);
+        } else if (entry->d_type == DT_REG) {
+            if (strstr(entry->d_name, task->search_term)) {
+                printf("[FOUND] %s\n", full_path);
+            }
+        } else if (entry->d_type == DT_UNKNOWN) {
+            struct stat st;
+            if (lstat(full_path, &st) == -1) {
+                continue;
+            }
+            if (S_ISDIR(st.st_mode)) {
+                pthread_mutex_lock(task->ring_mutex);
+                submit_open_request(full_path, task->ring, task->inflight_ops, 0);
+                pthread_mutex_unlock(task->ring_mutex);
+            } else if (S_ISREG(st.st_mode)) {
+                if (strstr(entry->d_name, task->search_term)) {
+                    printf("[FOUND] %s\n", full_path);
+                }
+            }
+        }
+    }
+    closedir(dir_stream);
+    free(task);
+}
+
 /* Submit an async openat */
 void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops, int force_flush) {
     Request *req = malloc(sizeof(Request));
@@ -92,47 +137,3 @@ void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
     pthread_mutex_unlock(ctx->ring_mutex);
 }
 
-void readdir_worker_function(void *args) {
-    WorkerTaskArgs *task = (WorkerTaskArgs*)args;
-
-    DIR *dir_stream = fdopendir(task->dir_fd);
-    if (!dir_stream) {
-        close(task->dir_fd);
-        free(task);
-        return;
-    }
-
-    struct dirent *entry;
-    while ((entry = readdir(dir_stream)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        
-        char full_path[PATH_MAX]; 
-        snprintf(full_path, sizeof(full_path), "%s/%s", task->path, entry->d_name);
-
-        if (entry->d_type == DT_DIR) {
-            pthread_mutex_lock(task->ring_mutex);
-            submit_open_request(full_path, task->ring, task->inflight_ops, 0);
-            pthread_mutex_unlock(task->ring_mutex);
-        } else if (entry->d_type == DT_REG) {
-            if (strstr(entry->d_name, task->search_term)) {
-                printf("[FOUND] %s\n", full_path);
-            }
-        } else if (entry->d_type == DT_UNKNOWN) {
-            struct stat st;
-            if (lstat(full_path, &st) == -1) {
-                continue;
-            }
-            if (S_ISDIR(st.st_mode)) {
-                pthread_mutex_lock(task->ring_mutex);
-                submit_open_request(full_path, task->ring, task->inflight_ops, 0);
-                pthread_mutex_unlock(task->ring_mutex);
-            } else if (S_ISREG(st.st_mode)) {
-                if (strstr(entry->d_name, task->search_term)) {
-                    printf("[FOUND] %s\n", full_path);
-                }
-            }
-        }
-    }
-    closedir(dir_stream);
-    free(task);
-}

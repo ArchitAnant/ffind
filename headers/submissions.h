@@ -9,30 +9,6 @@
 struct thpool_;
 typedef struct thpool_ *threadpool;
 
-// ---- Request structure ----
-typedef struct {
-    char path[PATH_MAX];
-} Request;
-
-// ---- Worker task args ----
-typedef struct {
-    int dir_fd;
-    char path[PATH_MAX];
-    const char *search_term;
-    struct io_uring *ring;
-    int *inflight_ops;
-    pthread_mutex_t *ring_mutex;
-} WorkerTaskArgs;
-
-// ---- App context ----
-typedef struct {
-    const char *search_term;
-    struct io_uring *ring;
-    int *inflight_ops;
-    pthread_mutex_t *ring_mutex;
-    threadpool pool;
-} AppContext;
-
 // ---- Function declarations ----
 
 // Flush batched SQEs

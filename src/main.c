@@ -4,6 +4,7 @@
 #include <liburing.h>
 #include <limits.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #include "../headers/request.h"
 #include "../headers/submissions.h"
