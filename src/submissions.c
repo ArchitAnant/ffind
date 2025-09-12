@@ -76,7 +76,7 @@ void readdir_worker_function(void *args) {
 }
 
 /* Submit an async openat */
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops, int force_flush) {
+void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
     Request *req = malloc(sizeof(Request));
     if (!req) {
         perror("malloc request");
@@ -91,17 +91,21 @@ void submit_open_request(const char *path, struct io_uring *ring, int *inflight_
         free(req);
         return;
     }
-    
+
     io_uring_prep_openat(sqe, AT_FDCWD, path, O_RDONLY | O_DIRECTORY, 0);
     io_uring_sqe_set_data(sqe, req);
 
-    (*inflight_ops)++;
-    pending_in_batch++;
-
-    if (pending_in_batch >= BATCH_SIZE || force_flush) {
-        flush_batch(ring);
+    // Submit immediately so kernel sees it
+    int ret = io_uring_submit(ring);
+    if (ret < 0) {
+        fprintf(stderr, "io_uring_submit failed: %s\n", strerror(-ret));
+        free(req);
+        return;
     }
+
+    (*inflight_ops)++;
 }
+
 
 void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
     Request *req = (Request *)io_uring_cqe_get_data(cqe);

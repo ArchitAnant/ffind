@@ -25,7 +25,7 @@ void handle_alarm(int sig) {
 }
 
 // Run a command with a timeout and measure CPU usage
-int run_cmd(char *cmd, char *arg1, char *arg2,
+int run_cmd(char *cmd, char *arg1, char *arg2, char *arg3,
             double *user, double *sys, int timeout_sec) {
     struct rusage usage_before, usage_after;
     pid_t pid;
@@ -35,9 +35,15 @@ int run_cmd(char *cmd, char *arg1, char *arg2,
 
     getrusage(RUSAGE_CHILDREN, &usage_before);
 
+        fprintf(stderr, "Running: %s", cmd);
+    if (arg1) fprintf(stderr, " %s", arg1);
+    if (arg2) fprintf(stderr, " %s", arg2);
+    if (arg3) fprintf(stderr, " %s", arg3);
+    fprintf(stderr, "\n");
+
     pid = fork();
     if (pid == 0) {
-        // Redirect stdout and stderr to /dev/null
+        //Redirect stdout and stderr to /dev/null
         int fd = open("/dev/null", O_WRONLY);
         if (fd != -1) {
             dup2(fd, STDOUT_FILENO);
@@ -45,7 +51,15 @@ int run_cmd(char *cmd, char *arg1, char *arg2,
             close(fd);
         }
 
-        execlp(cmd, cmd, arg1, arg2, (char *)NULL);
+        if (arg3)
+            execlp(cmd, cmd, arg1, arg2, arg3, (char *)NULL);
+        else if (arg2)
+            execlp(cmd, cmd, arg1, arg2, (char *)NULL);
+        else if (arg1)
+            execlp(cmd, cmd, arg1, (char *)NULL);
+        else
+            execlp(cmd, cmd, (char *)NULL);
+
         perror("exec failed");
         exit(1);
     }
@@ -97,8 +111,12 @@ int main() {
 
         double user1 = 0, sys1 = 0, user2 = 0, sys2 = 0;
         double total1 = 0, total2 = 0;
-        int rc1 = run_cmd("find", dirs[i], regex, &user1, &sys1, 1);
-        int rc2 = run_cmd("ffind", dirs[i], regex, &user2, &sys2, 1);
+
+        // find dir -name regex
+        int rc1 = run_cmd("find", dirs[i],"-name", regex, &user1, &sys1, 1);
+
+        // ffind dir regex (assuming your tool works like this)
+        int rc2 = run_cmd("./ffind", dirs[i], regex, NULL, &user2, &sys2, 1);
 
         if (rc1 == 124) {
             printf("find:\t" GRAY "[STALL]\n" NC);
