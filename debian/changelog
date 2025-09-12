@@ -1,3 +1,10 @@
+ffind (1.2) unstable; urgency=medium
+
+  * add: thread pooling for parallel searches 
+  * fix: missing paths in 1.1-1
+
+ -- Archit Anant <architanant5@egmail.com>  Fri, 12 Aug 2025 17:19:00 +0530
+
 ffind (1.1-1) unstable; urgency=medium
 
   * Added batching support with io_uring (up to 64 ops).
