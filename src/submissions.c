@@ -12,6 +12,7 @@
 
 #include "../headers/request.h"
 #include "../headers/thpool.h"
+#include "../headers/expr.h"
 
 #define BATCH_SIZE 64
 static int pending_in_batch = 0;
@@ -27,6 +28,18 @@ void flush_batch(struct io_uring *ring) {
     }
 }
 
+/*
+ * readdir_worker_function
+ *
+ * This is the worker that runs in the thread pool.  For each directory
+ * entry it:
+ *   1. Recurses into subdirectories (submit_open_request)
+ *   2. Evaluates the expression tree against the entry
+ *   3. Prints the path if the expression matches
+ *
+ * The expression tree evaluation mirrors findutils' per-file
+ * apply_predicate() call from ftsfind.c visit().
+ */
 void readdir_worker_function(void *args) {
     WorkerTaskArgs *task = (WorkerTaskArgs*)args;
 
@@ -44,28 +57,38 @@ void readdir_worker_function(void *args) {
         char full_path[PATH_MAX]; 
         snprintf(full_path, sizeof(full_path), "%s/%s", task->path, entry->d_name);
 
+        /* 1. Always recurse into directories.
+         *    This matches findutils' fts_read() loop which traverses
+         *    the directory tree independently of expression evaluation. */
         if (entry->d_type == DT_DIR) {
             pthread_mutex_lock(task->ring_mutex);
             submit_open_request(full_path, task->ring, task->inflight_ops, 0);
             pthread_mutex_unlock(task->ring_mutex);
-        } else if (entry->d_type == DT_REG) {
-            if (strstr(entry->d_name, task->search_term)) {
-                printf("[FOUND] %s\n", full_path);
-            }
         } else if (entry->d_type == DT_UNKNOWN) {
+            /* Some filesystems don't fill in d_type.  Fall back to lstat
+             * to check if this is a directory we need to recurse into.
+             * From findutils ftsfind.c consider_visiting() / digest_mode(). */
             struct stat st;
-            if (lstat(full_path, &st) == -1) {
-                continue;
-            }
-            if (S_ISDIR(st.st_mode)) {
+            if (lstat(full_path, &st) == 0 && S_ISDIR(st.st_mode)) {
                 pthread_mutex_lock(task->ring_mutex);
                 submit_open_request(full_path, task->ring, task->inflight_ops, 0);
                 pthread_mutex_unlock(task->ring_mutex);
-            } else if (S_ISREG(st.st_mode)) {
-                if (strstr(entry->d_name, task->search_term)) {
-                    printf("[FOUND] %s\n", full_path);
-                }
             }
+        }
+
+        /* 2. Evaluate the expression tree against this entry.
+         *    This replaces the old strstr() substring matching.
+         *
+         *    Mirrors findutils' call chain:
+         *      visit() → apply_predicate(path, &statbuf, eval_tree)
+         *
+         *    The stat buffer starts zeroed (st_ino == 0 is our "not yet
+         *    stated" sentinel).  evaluate() will call lstat() lazily only
+         *    if a predicate actually needs stat info.  Name-only predicates
+         *    like -name and -iname never trigger a stat call. */
+        struct stat st = {0};
+        if (evaluate(task->filter_tree, full_path, entry->d_name, entry->d_type, &st)) {
+            printf("%s\n", full_path);
         }
     }
     closedir(dir_stream);
@@ -131,7 +154,7 @@ void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
 
     task_args->dir_fd = cqe->res;
     strncpy(task_args->path, req->path, PATH_MAX);
-    task_args->search_term = ctx->search_term;
+    task_args->filter_tree = ctx->filter_tree;
     task_args->ring = ctx->ring; 
     task_args->inflight_ops = ctx->inflight_ops;
     task_args->ring_mutex = ctx->ring_mutex;
@@ -149,4 +172,3 @@ void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
     (*ctx->inflight_ops)--;
     pthread_mutex_unlock(ctx->ring_mutex);
 }
-

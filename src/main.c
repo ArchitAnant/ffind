@@ -9,6 +9,7 @@
 #include "../headers/request.h"
 #include "../headers/submissions.h"
 #include "../headers/thpool.h"
+#include "../headers/expr.h"
 
 
 
@@ -17,13 +18,31 @@
 
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <path> <search_term>\n", argv[0]);
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <path> [expression...]\n", argv[0]);
+        fprintf(stderr, "Example: %s /home -name '*.c' -type f\n", argv[0]);
         exit(1);
     }
     const char* search_path = argv[1];
-    const char* search_term = argv[2];
-    printf("[KICKOFF] searching for '%s' in '%s'\n", search_term, search_path);
+
+    /*
+     * Build the expression tree from argv[2..argc-1].
+     *
+     * This mirrors findutils' build_expression_tree() call from
+     * ftsfind.c main().  The tree is built once and shared read-only
+     * across all worker threads.
+     *
+     * If no expression is given (argc == 2), build_expression_tree
+     * returns NULL, which evaluate() treats as "match everything"
+     * — same behavior as `find <path>` with no predicates.
+     */
+    pred_node_t *filter_tree = build_expression_tree(argc, argv, 2);
+
+    /* If the user provided expression args but parsing failed,
+     * build_expression_tree returns NULL and has already printed
+     * an error.  In that case, we still get "match everything"
+     * behavior.  A more strict approach would be to exit(1) here,
+     * but for now we match the permissive GNU find behavior. */
 
   
     const long NPROC = sysconf(_SC_NPROCESSORS_ONLN);
@@ -40,7 +59,7 @@ int main(int argc, char *argv[]) {
 
     threadpool pool = thpool_init(NPROC);
 
-    AppContext ctx = { search_term, &ring, &inflight_ops, &ring_mutex, pool ,&active_tasks,&task_couter_mutex};
+    AppContext ctx = { filter_tree, &ring, &inflight_ops, &ring_mutex, pool ,&active_tasks,&task_couter_mutex};
 
     pthread_mutex_lock(&ring_mutex);
     submit_open_request(search_path, &ring, &inflight_ops, 1); // force_flush = 1
@@ -73,6 +92,7 @@ int main(int argc, char *argv[]) {
     thpool_wait(pool); // Wait for all queued readdir tasks to finish.
     thpool_destroy(pool);
 
+    free_expression_tree(filter_tree);
     pthread_mutex_destroy(&ring_mutex);
     io_uring_queue_exit(&ring);
 

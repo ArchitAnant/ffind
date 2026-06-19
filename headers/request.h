@@ -5,6 +5,8 @@
 #include <pthread.h>
 #include <liburing.h>
 
+#include "expr.h"
+
 // Forward declare threadpool type
 typedef struct thpool_* threadpool;
 
@@ -17,7 +19,7 @@ typedef struct Request {
 typedef struct WorkerTaskArgs{
     int dir_fd;
     char path[PATH_MAX];
-    const char * search_term;
+    pred_node_t *filter_tree;   /* expression tree (shared, read-only) */
     struct io_uring *ring;
     int *inflight_ops;
     pthread_mutex_t *ring_mutex; 
@@ -27,7 +29,7 @@ typedef struct WorkerTaskArgs{
 
 // ---- Application context ----
 typedef struct AppContext{
-    const char *search_term;
+    pred_node_t *filter_tree;   /* expression tree (shared, read-only) */
     struct io_uring *ring;
     int *inflight_ops;
     pthread_mutex_t *ring_mutex;
