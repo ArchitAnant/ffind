@@ -47,7 +47,12 @@ int main(int argc, char *argv[]) {
   
     const long NPROC = sysconf(_SC_NPROCESSORS_ONLN);
     struct io_uring ring;
-    io_uring_queue_init(256, &ring, 0);
+    int ret = io_uring_queue_init(256, &ring, 0);
+    if (ret < 0) {
+        fprintf(stderr, "Fatal error: io_uring_queue_init failed: %s\n", strerror(-ret));
+        fprintf(stderr, "Note: If you are running inside a Docker container, ensure it has --privileged permissions or the appropriate seccomp filter to support io_uring.\n");
+        exit(1);
+    }
 
     int inflight_ops = 0;
     int active_tasks = 0;
@@ -62,7 +67,7 @@ int main(int argc, char *argv[]) {
     AppContext ctx = { filter_tree, &ring, &inflight_ops, &ring_mutex, pool ,&active_tasks,&task_couter_mutex};
 
     pthread_mutex_lock(&ring_mutex);
-    submit_open_request(search_path, &ring, &inflight_ops, 1); // force_flush = 1
+    submit_open_request(search_path, &ring, &inflight_ops);
     pthread_mutex_unlock(&ring_mutex);
 
     while (inflight_ops > 0 || active_tasks>0) {

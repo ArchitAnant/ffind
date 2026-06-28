@@ -16,7 +16,7 @@ void flush_batch(struct io_uring *ring);
 
 // Submit async openat request
 void submit_open_request(const char *path, struct io_uring *ring,
-                         int *inflight_ops, int force_flush);
+                         int *inflight_ops);
 
 // Handle completion of openat
 void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx);

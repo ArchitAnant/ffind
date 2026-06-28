@@ -11,6 +11,7 @@
 #include <errno.h>      
 
 #include "../headers/request.h"
+#include "../headers/submissions.h"
 #include "../headers/thpool.h"
 #include "../headers/expr.h"
 
@@ -62,7 +63,7 @@ void readdir_worker_function(void *args) {
          *    the directory tree independently of expression evaluation. */
         if (entry->d_type == DT_DIR) {
             pthread_mutex_lock(task->ring_mutex);
-            submit_open_request(full_path, task->ring, task->inflight_ops, 0);
+            submit_open_request(full_path, task->ring, task->inflight_ops);
             pthread_mutex_unlock(task->ring_mutex);
         } else if (entry->d_type == DT_UNKNOWN) {
             /* Some filesystems don't fill in d_type.  Fall back to lstat
@@ -71,7 +72,7 @@ void readdir_worker_function(void *args) {
             struct stat st;
             if (lstat(full_path, &st) == 0 && S_ISDIR(st.st_mode)) {
                 pthread_mutex_lock(task->ring_mutex);
-                submit_open_request(full_path, task->ring, task->inflight_ops, 0);
+                submit_open_request(full_path, task->ring, task->inflight_ops);
                 pthread_mutex_unlock(task->ring_mutex);
             }
         }
