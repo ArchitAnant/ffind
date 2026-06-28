@@ -1,5 +1,8 @@
 /* expr.c -- Expression tree parser and evaluator for ffind.
  *
+ * _GNU_SOURCE must be defined before any includes to unlock FNM_CASEFOLD
+ * from <fnmatch.h> (it is a GNU libc extension, not in POSIX fnmatch).
+ *
  * Ported from GNU findutils:
  *   - tree.c:   get_expr(), scan_rest(), build_expression_tree()
  *   - pred.c:   pred_name, pred_type, pred_and, pred_or, pred_negate, etc.
@@ -14,6 +17,7 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -655,16 +659,6 @@ static bool is_expr_terminator(const char *tok)
     return strcmp(tok, "-o") == 0
         || strcmp(tok, "-or") == 0
         || strcmp(tok, ")") == 0;
-}
-
-/* Check if a token looks like the start of a primary (test or punctuation).
- * From findutils util.c looks_like_expression().
- */
-static bool is_primary_start(const char *tok)
-{
-    if (tok[0] == '-' && tok[1] != '\0') return true;
-    if ((tok[0] == '!' || tok[0] == '(') && tok[1] == '\0') return true;
-    return false;
 }
 
 /* Parse a single primary: a test with optional argument, NOT, or parenthesized expr.
