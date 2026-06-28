@@ -6,7 +6,10 @@
 #
 # Run setup_testenv.sh first, then: bash benchmark_avg.sh
 
-TIMEFORMAT='%U %S'
+# %R = elapsed real (wall clock) time — correct metric for a multi-threaded tool.
+# CPU time (user+sys) would always make ffind look slower because it uses
+# a thread pool that burns more total CPU even when finishing faster.
+TIMEFORMAT='%R'
 
 # --- Colors ---
 GREEN="\033[1;32m"
@@ -103,9 +106,7 @@ for i in "${!SEARCHES[@]}"; do
     if [[ $rc -eq 124 ]]; then
         ((stalls_find++))
     else
-        u=$(echo "$ts" | awk '{print $1}')
-        s=$(echo "$ts" | awk '{print $2}')
-        t=$(awk -v u="$u" -v s="$s" 'BEGIN{printf "%.6f", u+s}')
+        t=$(echo "$ts" | awk '{print $1}')
         total_find=$(awk -v a="$total_find" -v b="$t" 'BEGIN{printf "%.6f", a+b}')
         ((count_find++))
     fi
@@ -116,9 +117,7 @@ for i in "${!SEARCHES[@]}"; do
     if [[ $rc -eq 124 ]]; then
         ((stalls_ffind++))
     else
-        u=$(echo "$ts" | awk '{print $1}')
-        s=$(echo "$ts" | awk '{print $2}')
-        t=$(awk -v u="$u" -v s="$s" 'BEGIN{printf "%.6f", u+s}')
+        t=$(echo "$ts" | awk '{print $1}')
         total_ffind=$(awk -v a="$total_ffind" -v b="$t" 'BEGIN{printf "%.6f", a+b}')
         ((count_ffind++))
     fi
@@ -133,8 +132,8 @@ echo "========================================"
 avg_find=$(awk  -v t="$total_find"  -v n="$count_find"  'BEGIN{ if(n>0) printf "%.6f",t/n; else print "N/A" }')
 avg_ffind=$(awk -v t="$total_ffind" -v n="$count_ffind" 'BEGIN{ if(n>0) printf "%.6f",t/n; else print "N/A" }')
 
-echo -e " find  — avg CPU time: ${GRAY}${avg_find}s${NC}  (${stalls_find} stalls / $total)"
-echo -e " ffind — avg CPU time: ${GREEN}${avg_ffind}s${NC}  (${stalls_ffind} stalls / $total)"
+echo -e " find  — avg wall time: ${GRAY}${avg_find}s${NC}  (${stalls_find} stalls / $total)"
+echo -e " ffind — avg wall time: ${GREEN}${avg_ffind}s${NC}  (${stalls_ffind} stalls / $total)"
 echo ""
 
 if [[ "$avg_find" == "N/A" || "$avg_ffind" == "N/A" ]]; then
