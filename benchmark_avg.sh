@@ -1,27 +1,19 @@
 #!/bin/bash
 # benchmark_avg.sh
 #
-# Runs each benchmark N times and reports average CPU time + % speed difference.
-# Tests a variety of expression complexities to stress both the parser and evaluator.
+# Runs ~40 searches with find and ffind, accumulates all timings,
+# and prints a single overall average + % speed difference at the end.
 #
-# Run setup_testenv.sh first, then: bash benchmark_avg.sh [runs]
-#
-# Usage:
-#   bash benchmark_avg.sh          # default: 10 runs per benchmark
-#   bash benchmark_avg.sh 20       # 20 runs per benchmark
-
-RUNS="${1:-10}"
-
-# --- Colors ---
-PURPLE="\033[0;35m"
-GRAY="\033[0;37m"
-GREEN="\033[1;32m"
-RED="\033[1;31m"
-YELLOW="\033[1;33m"
-BOLD="\033[1m"
-NC="\033[0m"
+# Run setup_testenv.sh first, then: bash benchmark_avg.sh
 
 TIMEFORMAT='%U %S'
+
+# --- Colors ---
+GREEN="\033[1;32m"
+RED="\033[1;31m"
+GRAY="\033[0;37m"
+BOLD="\033[1m"
+NC="\033[0m"
 
 # --- Guards ---
 if [ ! -d "testdir" ]; then
@@ -34,141 +26,131 @@ if [ ! -x "./build/ffind" ]; then
 fi
 
 # ============================================================
-# Test cases: each entry is "LABEL|DIR|EXPR..."
-# The EXPR tokens (everything after the second |) are passed
-# as separate shell arguments to both find and ffind.
+# Full search list — 40 searches run verbatim against both
+# find and ffind. Format: "DIR|ARG1 ARG2 ..."
 # ============================================================
-TEST_CASES=(
-    # ---------- simple ----------
-    "simple name match              |testdir|-name *.txt"
-    "simple type filter             |testdir|-type f"
-    "simple NOT                     |testdir|-not -name *.txt"
-
-    # ---------- compound / implicit AND ----------
-    "name AND type (implicit AND)   |testdir|-name *.txt -type f"
-    "name AND type (explicit -a)    |testdir|-name *.c -a -type f"
-    "name AND NOT                   |testdir|-name *.txt -not -type d"
-
-    # ---------- OR expressions ----------
-    "two extensions OR              |testdir|-name *.txt -o -name *.md"
-    "three extensions OR            |testdir|-name *.c -o -name *.h -o -name *.txt"
-
-    # ---------- parenthesised groups ----------
-    "paren OR then AND type         |testdir|( -name *.txt -o -name *.md ) -type f"
-    "paren NOT group                |testdir|-not ( -name *.o -o -name *.out )"
-    "nested parens                  |testdir|( -name *.c -o ( -name *.h -type f ) )"
-
-    # ---------- stat-requiring predicates ----------
-    "empty files                    |testdir|-empty"
-    "size > 1 byte                  |testdir|-size +1c"
-    "size > 1 byte AND name         |testdir|-size +1c -name *.txt"
-    "modified < 2 days              |testdir|-mtime -2"
-    "modified < 2 days AND name     |testdir|-mtime -2 -name *.txt"
-
-    # ---------- longer compound chains ----------
-    "long chain AND OR mix          |testdir|-name *.txt -type f -size +1c -o -name *.md -type f"
-    "long NOT chain                 |testdir|-not -name *.o -not -name *.out -not -name *.log"
-    "complex paren chain            |testdir|( -name *.txt -o -name *.c ) -type f -not -name *stress*"
-
-    # ---------- system dirs (real-world feel) ----------
-    "name match on /etc             |/etc|-name *.conf"
-    "type f on /etc                 |/etc|-type f"
-    "name AND type on /etc          |/etc|-name *.conf -type f"
-    "NOT name on /etc               |/etc|-not -name *.conf -type f"
-    "OR names on /usr/bin           |/usr/bin|-name find -o -name grep -o -name awk"
+SEARCHES=(
+    "testdir|-name *.txt"
+    "testdir|-name *.c"
+    "testdir|-name *.md"
+    "testdir|-name *.log"
+    "testdir|-name *.dat"
+    "testdir|-type f"
+    "testdir|-type d"
+    "testdir|-not -name *.o"
+    "testdir|-not -name *.out"
+    "testdir|-name *.txt -type f"
+    "testdir|-name *.c -type f"
+    "testdir|-name *.txt -a -type f"
+    "testdir|-name *.c -o -name *.h"
+    "testdir|-name *.txt -o -name *.md"
+    "testdir|-name *.c -o -name *.h -o -name *.txt"
+    "testdir|( -name *.txt -o -name *.md ) -type f"
+    "testdir|( -name *.c -o -name *.h ) -type f"
+    "testdir|-not ( -name *.o -o -name *.out )"
+    "testdir|-not -name *.o -not -name *.out -not -name *.log"
+    "testdir|-name *.txt -type f -not -name *stress*"
+    "testdir|-size +1c"
+    "testdir|-size +1c -type f"
+    "testdir|-size +1c -name *.txt"
+    "testdir|-empty"
+    "testdir|-mtime -2"
+    "testdir|-mtime -2 -type f"
+    "testdir|-mtime -2 -name *.txt"
+    "testdir|-name *.txt -mtime -2 -type f"
+    "testdir|-name *.log -o -name *.dat -type f"
+    "testdir|( -name *.txt -o -name *.c ) -type f -not -name *stress*"
+    "testdir|-name *.txt -type f -size +1c -o -name *.md -type f"
+    "testdir|-type f -not -name *.o -not -name *.out"
+    "/etc|-name *.conf"
+    "/etc|-type f"
+    "/etc|-name *.conf -type f"
+    "/etc|-not -name *.conf -type f"
+    "/etc|-name *.conf -o -name *.cfg"
+    "/usr/bin|-type f"
+    "/usr/bin|-name find -o -name grep -o -name awk"
+    "/usr/bin|-type f -not -name python*"
 )
 
-echo -e "${BOLD}Runs per benchmark: $RUNS${NC}"
+total_find=0
+total_ffind=0
+count_find=0
+count_ffind=0
+stalls_find=0
+stalls_ffind=0
+total=${#SEARCHES[@]}
+
+echo "Running $total searches × 2 (find + ffind) ..."
 echo ""
 
-# ---- Helper: run one timed command, return total CPU time or "STALL" ----
-run_once() {
-    local -n _out=$1
-    shift
-    local timestr rc
-    timestr=$( { time timeout 2s "$@" >/dev/null 2>&1; } 2>&1 )
-    rc=$?
-    if [[ $rc -eq 124 ]]; then
-        _out="STALL"
-    else
-        local u s
-        u=$(echo "$timestr" | awk '{print $1}')
-        s=$(echo "$timestr" | awk '{print $2}')
-        _out=$(awk -v u="$u" -v s="$s" 'BEGIN { printf "%.6f", u+s }')
-    fi
-}
-
-# ---- Helper: average space-separated numbers, skipping STALLs ----
-average() {
-    echo "$@" | tr ' ' '\n' | grep -v STALL | \
-        awk '{sum+=$1; n++} END { if(n>0) printf "%.6f", sum/n; else print "STALL" }'
-}
-
-# ---- Helper: % faster (positive = ffind faster) ----
-pct_diff() {
-    awk -v f="$1" -v g="$2" 'BEGIN {
-        if (f==0) { print "N/A"; exit }
-        printf "%.1f", (f - g) / f * 100
-    }'
-}
-
-bench_id=1
-for tc in "${TEST_CASES[@]}"; do
-    # Parse the test case: split on '|'
-    IFS='|' read -r label dir expr_str <<< "$tc"
-    label=$(echo "$label" | sed 's/[[:space:]]*$//')   # trim trailing spaces
-
-    # Split expr_str into an array of tokens
+for i in "${!SEARCHES[@]}"; do
+    IFS='|' read -r dir expr_str <<< "${SEARCHES[$i]}"
     read -ra expr_tokens <<< "$expr_str"
 
+    n=$((i + 1))
+    printf "\r  [%2d/%d] %-55s" "$n" "$total" "$dir ${expr_tokens[*]}"
+
+    # Skip if dir does not exist
     if [ ! -d "$dir" ]; then
-        echo -e "${YELLOW}[$bench_id] Skipping \"$label\" — $dir not found${NC}"
-        echo ""
-        ((bench_id++))
+        ((stalls_find++))
+        ((stalls_ffind++))
         continue
     fi
 
-    echo -e "${PURPLE}[$bench_id]${NC} ${BOLD}${label}${NC}"
-    echo -e "     ${GRAY}dir: $dir  |  expr: ${expr_str}${NC}"
-
-    find_times=()
-    ffind_times=()
-    stall_find=0
-    stall_ffind=0
-
-    for run in $(seq 1 "$RUNS"); do
-        printf "\r     Run %d/%d ..." "$run" "$RUNS"
-
-        run_once t1 find   "$dir" "${expr_tokens[@]}"
-        run_once t2 ./build/ffind "$dir" "${expr_tokens[@]}"
-
-        find_times+=("$t1")
-        ffind_times+=("$t2")
-        [[ "$t1" == "STALL" ]] && ((stall_find++))
-        [[ "$t2" == "STALL" ]] && ((stall_ffind++))
-    done
-    printf "\r     Done.              \n"
-
-    avg_find=$(average  "${find_times[@]}")
-    avg_ffind=$(average "${ffind_times[@]}")
-
-    echo -e "     find  avg: ${GRAY}${avg_find}s${NC}  (${stall_find}/${RUNS} stalls)"
-    echo -e "     ffind avg: ${GREEN}${avg_ffind}s${NC}  (${stall_ffind}/${RUNS} stalls)"
-
-    if [[ "$avg_find" == "STALL" || "$avg_ffind" == "STALL" ]]; then
-        echo -e "     speedup:  ${RED}[STALL — cannot compare]${NC}"
+    # --- find ---
+    ts=$( { time timeout 3s find "$dir" "${expr_tokens[@]}" >/dev/null 2>&1; } 2>&1 )
+    rc=$?
+    if [[ $rc -eq 124 ]]; then
+        ((stalls_find++))
     else
-        pct=$(pct_diff "$avg_find" "$avg_ffind")
-        if (( $(echo "$pct > 0" | bc -l) )); then
-            echo -e "     speedup:  ${GREEN}${BOLD}ffind is ${pct}% faster${NC}"
-        elif (( $(echo "$pct < 0" | bc -l) )); then
-            abs=$(echo "$pct" | tr -d -)
-            echo -e "     speedup:  ${RED}${BOLD}ffind is ${abs}% SLOWER${NC}"
-        else
-            echo -e "     speedup:  ${GRAY}no measurable difference${NC}"
-        fi
+        u=$(echo "$ts" | awk '{print $1}')
+        s=$(echo "$ts" | awk '{print $2}')
+        t=$(awk -v u="$u" -v s="$s" 'BEGIN{printf "%.6f", u+s}')
+        total_find=$(awk -v a="$total_find" -v b="$t" 'BEGIN{printf "%.6f", a+b}')
+        ((count_find++))
     fi
 
-    echo ""
-    ((bench_id++))
+    # --- ffind ---
+    ts=$( { time timeout 3s ./build/ffind "$dir" "${expr_tokens[@]}" >/dev/null 2>&1; } 2>&1 )
+    rc=$?
+    if [[ $rc -eq 124 ]]; then
+        ((stalls_ffind++))
+    else
+        u=$(echo "$ts" | awk '{print $1}')
+        s=$(echo "$ts" | awk '{print $2}')
+        t=$(awk -v u="$u" -v s="$s" 'BEGIN{printf "%.6f", u+s}')
+        total_ffind=$(awk -v a="$total_ffind" -v b="$t" 'BEGIN{printf "%.6f", a+b}')
+        ((count_ffind++))
+    fi
 done
+
+printf "\r  Done.%-60s\n" ""
+echo ""
+echo "========================================"
+echo " RESULTS  ($total searches)"
+echo "========================================"
+
+avg_find=$(awk  -v t="$total_find"  -v n="$count_find"  'BEGIN{ if(n>0) printf "%.6f",t/n; else print "N/A" }')
+avg_ffind=$(awk -v t="$total_ffind" -v n="$count_ffind" 'BEGIN{ if(n>0) printf "%.6f",t/n; else print "N/A" }')
+
+echo -e " find  — avg CPU time: ${GRAY}${avg_find}s${NC}  (${stalls_find} stalls / $total)"
+echo -e " ffind — avg CPU time: ${GREEN}${avg_ffind}s${NC}  (${stalls_ffind} stalls / $total)"
+echo ""
+
+if [[ "$avg_find" == "N/A" || "$avg_ffind" == "N/A" ]]; then
+    echo -e " speedup: ${RED}cannot compute (all stalls)${NC}"
+else
+    pct=$(awk -v f="$avg_find" -v g="$avg_ffind" 'BEGIN{
+        if(f==0){ print "N/A"; exit }
+        printf "%.1f", (f-g)/f*100
+    }')
+    if (( $(echo "$pct > 0" | bc -l) )); then
+        echo -e " speedup: ${GREEN}${BOLD}ffind is ${pct}% faster on average${NC}"
+    elif (( $(echo "$pct < 0" | bc -l) )); then
+        abs=$(echo "$pct" | tr -d -)
+        echo -e " speedup: ${RED}${BOLD}ffind is ${abs}% SLOWER on average${NC}"
+    else
+        echo -e " speedup: ${GRAY}no measurable difference${NC}"
+    fi
+fi
+echo "========================================"
