@@ -15,18 +15,15 @@
 #include "../headers/thpool.h"
 #include "../headers/expr.h"
 
-#define BATCH_SIZE 64
-static int pending_in_batch = 0;
-
-/* Flush batched SQEs */
-void flush_batch(struct io_uring *ring) {
-    if (pending_in_batch > 0) {
-        int ret = io_uring_submit(ring);
-        if (ret < 0) {
-            fprintf(stderr, "Error in io_uring_submit: %s\n", strerror(-ret));
-        }
-        pending_in_batch = 0;
-    }
+/* Print a match using write() instead of printf().
+ * write() has no internal locking — printf() serializes all
+ * threads through a single stdio mutex, which kills throughput
+ * when many workers are matching simultaneously. */
+static void print_match(const char *path) {
+    char buf[PATH_MAX + 1];
+    int len = snprintf(buf, sizeof(buf), "%s\n", path);
+    if (len > 0)
+        (void)write(STDOUT_FILENO, buf, (size_t)len);
 }
 
 /*
@@ -52,82 +49,86 @@ void readdir_worker_function(void *args) {
     }
 
     struct dirent *entry;
+    int pending_submits = 0;   /* SQEs queued but not yet submitted this pass */
+
     while ((entry = readdir(dir_stream)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
-        
-        char full_path[PATH_MAX]; 
+
+        char full_path[PATH_MAX];
         snprintf(full_path, sizeof(full_path), "%s/%s", task->path, entry->d_name);
 
-        /* 1. Always recurse into directories.
-         *    This matches findutils' fts_read() loop which traverses
-         *    the directory tree independently of expression evaluation. */
+        /* 1. Queue openat SQEs for subdirectories.
+         *    Crucially we do NOT call io_uring_submit per directory —
+         *    we accumulate all SQEs for this readdir pass and submit
+         *    in one single syscall at the end.  This is the standard
+         *    io_uring batching pattern and cuts submit overhead by N-1
+         *    syscalls per directory (N = number of subdirs found). */
         if (entry->d_type == DT_DIR) {
             pthread_mutex_lock(task->ring_mutex);
-            submit_open_request(full_path, task->ring, task->inflight_ops);
+            int queued = submit_open_request(full_path, task->ring, task->inflight_ops);
             pthread_mutex_unlock(task->ring_mutex);
+            if (queued) pending_submits++;
         } else if (entry->d_type == DT_UNKNOWN) {
-            /* Some filesystems don't fill in d_type.  Fall back to lstat
-             * to check if this is a directory we need to recurse into.
-             * From findutils ftsfind.c consider_visiting() / digest_mode(). */
             struct stat st;
             if (lstat(full_path, &st) == 0 && S_ISDIR(st.st_mode)) {
                 pthread_mutex_lock(task->ring_mutex);
-                submit_open_request(full_path, task->ring, task->inflight_ops);
+                int queued = submit_open_request(full_path, task->ring, task->inflight_ops);
                 pthread_mutex_unlock(task->ring_mutex);
+                if (queued) pending_submits++;
             }
         }
 
-        /* 2. Evaluate the expression tree against this entry.
-         *    This replaces the old strstr() substring matching.
-         *
-         *    Mirrors findutils' call chain:
-         *      visit() → apply_predicate(path, &statbuf, eval_tree)
-         *
-         *    The stat buffer starts zeroed (st_ino == 0 is our "not yet
-         *    stated" sentinel).  evaluate() will call lstat() lazily only
-         *    if a predicate actually needs stat info.  Name-only predicates
-         *    like -name and -iname never trigger a stat call. */
+        /* 2. Evaluate expression tree — lazy stat, no-op for name-only predicates. */
         struct stat st = {0};
         if (evaluate(task->filter_tree, full_path, entry->d_name, entry->d_type, &st)) {
-            printf("%s\n", full_path);
+            print_match(full_path);
         }
     }
+
+    /* Flush all queued SQEs in one submit call instead of one per directory. */
+    if (pending_submits > 0) {
+        pthread_mutex_lock(task->ring_mutex);
+        io_uring_submit(task->ring);
+        pthread_mutex_unlock(task->ring_mutex);
+    }
+
     closedir(dir_stream);
     pthread_mutex_lock(task->task_counter_mutex);
     (*task->active_task)--;
+    pthread_cond_signal(task->task_done_cond);
     pthread_mutex_unlock(task->task_counter_mutex);
     free(task);
 }
 
-/* Submit an async openat */
-void submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
+/* Queue an async openat SQE without submitting.
+ * Returns 1 if the SQE was queued, 0 on failure.
+ * The caller is responsible for calling io_uring_submit() at the
+ * right time (after the full readdir pass) to batch all opens. */
+int submit_open_request(const char *path, struct io_uring *ring, int *inflight_ops) {
     Request *req = malloc(sizeof(Request));
     if (!req) {
         perror("malloc request");
-        return;
+        return 0;
     }
     strncpy(req->path, path, sizeof(req->path) - 1);
     req->path[sizeof(req->path) - 1] = '\0';
 
     struct io_uring_sqe *sqe = io_uring_get_sqe(ring);
     if (!sqe) {
-        fprintf(stderr, "Warning: Could not get SQE, dropping task for %s\n", path);
-        free(req);
-        return;
+        /* Ring is full — submit what we have and retry once. */
+        io_uring_submit(ring);
+        sqe = io_uring_get_sqe(ring);
+        if (!sqe) {
+            fprintf(stderr, "Warning: SQ ring full, dropping %s\n", path);
+            free(req);
+            return 0;
+        }
     }
 
     io_uring_prep_openat(sqe, AT_FDCWD, path, O_RDONLY | O_DIRECTORY, 0);
     io_uring_sqe_set_data(sqe, req);
-
-    // Submit immediately so kernel sees it
-    int ret = io_uring_submit(ring);
-    if (ret < 0) {
-        fprintf(stderr, "io_uring_submit failed: %s\n", strerror(-ret));
-        free(req);
-        return;
-    }
-
     (*inflight_ops)++;
+    return 1;  /* queued; caller must io_uring_submit() */
 }
 
 
@@ -155,12 +156,13 @@ void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx) {
 
     task_args->dir_fd = cqe->res;
     strncpy(task_args->path, req->path, PATH_MAX);
-    task_args->filter_tree = ctx->filter_tree;
-    task_args->ring = ctx->ring; 
-    task_args->inflight_ops = ctx->inflight_ops;
-    task_args->ring_mutex = ctx->ring_mutex;
-    task_args->active_task = ctx->active_task;
+    task_args->filter_tree      = ctx->filter_tree;
+    task_args->ring             = ctx->ring;
+    task_args->inflight_ops     = ctx->inflight_ops;
+    task_args->ring_mutex       = ctx->ring_mutex;
+    task_args->active_task      = ctx->active_task;
     task_args->task_counter_mutex = ctx->task_counter_mutex;
+    task_args->task_done_cond   = ctx->task_done_cond;
 
     pthread_mutex_lock(ctx->task_counter_mutex);
     (*ctx->active_task)++;

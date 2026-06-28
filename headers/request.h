@@ -22,9 +22,10 @@ typedef struct WorkerTaskArgs{
     pred_node_t *filter_tree;   /* expression tree (shared, read-only) */
     struct io_uring *ring;
     int *inflight_ops;
-    pthread_mutex_t *ring_mutex; 
+    pthread_mutex_t *ring_mutex;
     int *active_task;
     pthread_mutex_t *task_counter_mutex;
+    pthread_cond_t  *task_done_cond;  /* signalled when active_task decrements */
 }WorkerTaskArgs;
 
 // ---- Application context ----
@@ -36,6 +37,7 @@ typedef struct AppContext{
     threadpool pool;
     int *active_task;
     pthread_mutex_t *task_counter_mutex;
+    pthread_cond_t  *task_done_cond;  /* signalled when a worker finishes */
 }AppContext;
 
 #endif // REQUEST_H

@@ -11,12 +11,10 @@ typedef struct thpool_ *threadpool;
 
 // ---- Function declarations ----
 
-// Flush batched SQEs
-void flush_batch(struct io_uring *ring);
-
-// Submit async openat request
-void submit_open_request(const char *path, struct io_uring *ring,
-                         int *inflight_ops);
+// Submit async openat SQE (returns 1 on success, 0 on failure).
+// Does NOT call io_uring_submit — caller batches and submits after readdir pass.
+int submit_open_request(const char *path, struct io_uring *ring,
+                        int *inflight_ops);
 
 // Handle completion of openat
 void handle_completion(struct io_uring_cqe *cqe, AppContext *ctx);
