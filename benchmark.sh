@@ -53,7 +53,7 @@ for dir in "${dirs[@]}"; do
     echo -e "${PURPLE}BENCH $bench_id${NC} ${YELLOW}(dir=$dir, pattern=$PATTERN)${NC}"
 
     # --- Run find with 2 sec timeout ---
-    timestr1=$( { timeout 2s time find "$dir" -name "$PATTERN" >/dev/null; } 2>&1 )
+    timestr1=$( { time timeout 2s find "$dir" -name "$PATTERN" >/dev/null; } 2>&1 )
     rc1=$?
     if [[ $rc1 -eq 124 ]]; then
         total_time1="STALL"
@@ -68,7 +68,7 @@ for dir in "${dirs[@]}"; do
     # --- Run ffind with 2 sec timeout ---
     # NOTE: ffind now uses GNU find-style expression syntax.
     #   ./build/ffind <dir> -name "*.txt"
-    timestr2=$( { timeout 2s time ./build/ffind "$dir" -name "$PATTERN" >/dev/null; } 2>&1 )
+    timestr2=$( { time timeout 2s ./build/ffind "$dir" -name "$PATTERN" >/dev/null; } 2>&1 )
     rc2=$?
     if [[ $rc2 -eq 124 ]]; then
         total_time2="STALL"
